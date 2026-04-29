@@ -1,0 +1,3 @@
+curl_cffi>=0.7
+rich>=13
+windows-toasts; sys_platform == "win32"
