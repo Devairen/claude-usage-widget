@@ -4,25 +4,7 @@ A small terminal panel showing your **real** Claude.ai usage limits — the same
 numbers Claude Desktop shows under Settings → Usage, but on a screen of your
 choice and refreshed automatically.
 
-```
-  CLAUDE USAGE
- ┌─────────────────────────────────────────────────────┐
- │ CURRENT 5H SESSION                                  │
- │   Used   ███████████████░░░░░░░░░░░░░░░    52.8%   │
- │   Resets in   2h 11m  (Wed 16:40)                  │
- │   ETA full    ~3h 10m at current rate              │
- │   Trend       ▁▂▂▃▄▅▆▆▇▇                  10m      │
- │                                                     │
- │ WEEKLY (7D)                                         │
- │   All models  ████████░░░░░░░░░░░░░░░░░░░  34.0%   │
- │   Resets in   4d 3h  (Sun 16:00)                   │
- │                                                     │
- │ CODE (10m)                                          │
- │   Tokens   45,194              4,519/m             │
- │                                                     │
- │ updated 12:00:01                                    │
- └─────────────────────────────────────────────────────┘
-```
+![Claude Usage Widget](screenshot.png)
 
 ## Why
 
