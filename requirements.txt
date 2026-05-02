@@ -1,3 +1,4 @@
 curl_cffi>=0.7
 rich>=13
 windows-toasts; sys_platform == "win32"
+matplotlib>=3.8  # only needed for graph.py

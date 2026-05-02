@@ -1,6 +1,7 @@
 config.json
 history.json
 usage-log.csv
+usage-graph.png
 __pycache__/
 *.pyc
 .venv/
