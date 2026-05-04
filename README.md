@@ -1,143 +1,155 @@
 # Claude Usage Widget
 
-A small terminal panel showing your **real** Claude.ai usage limits — the same
-numbers Claude Desktop shows under Settings → Usage, but on a screen of your
-choice and refreshed automatically.
+Monitor your **real** Claude.ai usage limits — the same numbers shown under
+Settings > Usage, but always visible, refreshed automatically, and with extras
+like burn-rate estimates and trend logging.
 
-![Claude Usage Widget](screenshot.png)
+Available as a **native macOS menu-bar app** (Swift/SwiftUI) and a
+**Windows terminal widget** (Python/Rich).
 
-## Why
-
-Claude Desktop's usage page (the *real* "97% used" number) is hidden behind a
-private API protected by Cloudflare. Existing third-party monitors fall back to
-estimating from local Claude Code logs, which means they only see Code usage and
-miss everything you do in Desktop or on the web — for heavy Desktop users they
-underreport by ~50%+.
-
-This widget calls the same private API the desktop client uses and shows the
-exact numbers, with extras: ETA prediction, sparkline trend, weekly breakdown,
-desktop notifications, CSV log, and an optional Claude Code burn-rate panel
-that scans your local `~/.claude/projects/` logs for token-level granularity.
-
-## How it works
-
-1. Reads your Claude.ai session cookie from a local `config.json`.
-2. Polls `https://claude.ai/api/organizations/<org_id>/usage` every 60 seconds
-   using [`curl_cffi`](https://github.com/lexiforest/curl_cffi) to impersonate
-   Chrome's TLS fingerprint (Cloudflare blocks plain HTTP clients).
-3. Renders a live panel with [`rich`](https://github.com/Textualize/rich).
-4. Persists short history to `history.json`, full history to `usage-log.csv`.
+Both versions call the same undocumented private API the Claude apps use
+internally, so you see the exact figures — not estimates from local logs.
 
 ## Caveats — read this first
 
 - **Undocumented API.** Anthropic doesn't publish this endpoint. It can change
-  or be removed at any time, breaking this script.
-- **TOS grey area.** Polling a private API with a scraped session cookie is
-  not explicitly endorsed by Anthropic. Polling at a sensible interval (60s+)
-  is unlikely to draw attention, but use at your own risk.
-- **Cookie expiry.** The session cookie lasts as long as your browser session
-  does — typically weeks if you stay logged in to claude.ai. When it dies, the
-  widget shows a red "AUTH FAILED" panel and you re-paste a fresh cookie.
-- **Windows-tested.** The widget itself is cross-platform Python, but the
-  desktop notifications use `windows-toasts`. On macOS/Linux the toasts are
-  silently skipped — everything else works.
+  or break at any time.
+- **TOS grey area.** Polling a private API with a session cookie is not
+  explicitly endorsed. A sensible poll interval (60 s) is unlikely to draw
+  attention, but use at your own risk.
+- **Cookie expiry.** Session cookies last as long as your browser session —
+  typically weeks. When they expire the widget tells you and you sign in again.
 
-## Setup
+---
 
-### 1. Install Python deps
+## macOS (menu-bar app)
 
-Requires Python 3.10+.
+A native Swift/SwiftUI app that lives in your menu bar. One-click sign-in via
+an embedded browser, no cookie pasting required.
+
+### Features
+
+- Circular progress arc in the menu bar — color shifts through the Claude
+  palette as usage rises (tan > orange > deep > red).
+- Popover with 5 h session usage, 7-day rolling usage, per-model breakdown
+  (Sonnet / Opus / Design), and extra-usage spend.
+- Burn-rate estimate: "limit in ~53 m - 2.3 %/min" with a warning when you'll
+  hit 100 % before the session resets.
+- Persistent sign-in — uses a real WebKit session, so you only log in once.
+- Logs every poll to CSV (`usage-log.csv`) and keeps a short history for the
+  burn-rate sparkline.
+
+### Requirements
+
+- macOS 14 (Sonoma) or later
+- Xcode or Swift toolchain (for building from source)
+
+### Build & run
 
 ```bash
+cd macos
+chmod +x build.sh
+./build.sh          # builds with SPM, assembles .app bundle in dist/
+open dist/Claude\ Usage.app
+```
+
+The app appears as a menu-bar icon. Click it to see the popover.
+On first launch it opens a sign-in window automatically.
+
+### Manual setup (alternative)
+
+If you prefer not to use the browser sign-in:
+
+1. Get your `org_id` and cookie string (see "Getting credentials" below).
+2. Click **Settings** in the popover > **Manual Setup**, paste both values, Save.
+
+Config is stored in `~/Library/Application Support/ClaudeUsage/config.json`
+(owner-only permissions, `chmod 600`).
+
+---
+
+## Windows (terminal widget)
+
+A Python terminal widget rendered with [Rich](https://github.com/Textualize/rich)
+and TLS-fingerprinted requests via
+[curl_cffi](https://github.com/lexiforest/curl_cffi).
+
+![Claude Usage Widget](windows/screenshot.png)
+
+### Features
+
+- Live 5 h session and 7-day usage bars with ETA prediction.
+- Sparkline trend from recent history.
+- Desktop notifications (Windows toast) at configurable thresholds.
+- CSV log + `graph.py` for charting usage over time.
+
+### Requirements
+
+- Python 3.10+
+- Windows (desktop toasts are Windows-only; everything else is cross-platform)
+
+### Setup
+
+```bash
+cd windows
 pip install -r requirements.txt
-```
-
-### 2. Get your org_id and cookie
-
-1. Open [claude.ai](https://claude.ai) in **Chrome** (or any Chromium browser),
-   log in.
-2. Open DevTools (`F12`), Network tab, check **Preserve log**, click **Fetch/XHR**.
-3. Navigate to **Settings → Usage**.
-4. In the request list, click the entry named **`usage`**.
-5. **Request URL** (top of Headers tab) looks like:
-   `https://claude.ai/api/organizations/<UUID>/usage`
-   — that UUID is your `org_id`.
-6. Scroll down to **Request Headers** → **`Cookie:`** → right-click → Copy value.
-   That's your cookie string.
-
-### 3. Configure
-
-```bash
-cp config.example.json config.json
-```
-
-Edit `config.json` and paste in your `org_id` and `cookie`.
-
-### 4. Run
-
-```bash
+cp config.example.json config.json   # then edit with your credentials
 python claude_usage_widget.py
 ```
 
-You should see the widget render and start polling. `Ctrl+C` to exit.
+### Auto-start on Windows
 
-## Optional: auto-start on Windows
+Save a `.cmd` launcher and drop a shortcut in `shell:startup`:
 
-To run at login on a specific monitor:
-
-1. Save a `.cmd` launcher somewhere (e.g. `C:\path\to\start-widget.cmd`):
-
-   ```cmd
-   @echo off
-   start "" wt.exe -F --pos 2660,-441 --size 80,30 cmd /k "python C:\path\to\claude_usage_widget.py"
-   ```
-
-   - `--pos X,Y` = top-left of the window (use Windows display coords; secondary
-     monitors can be negative)
-   - `--size cols,rows` = terminal dimensions
-   - `-F` = focus mode (hides tab bar)
-
-2. Press `Win+R`, type `shell:startup`, hit Enter — drop a shortcut to the
-   `.cmd` file in there. It'll launch every time you log in.
-
-## When the cookie expires
-
-You'll see a red "AUTH FAILED" panel. Either:
-
-- **Manual:** Edit `config.json`, paste the new cookie, save. The widget picks it
-  up within 60s.
-- **Helper script (Windows):** `powershell .\refresh-cookie.ps1` — prompts for
-  the new cookie, writes it for you.
-
-## Generating a graph
-
-The widget appends every poll to `usage-log.csv`. To turn that into a nice
-chart of the last 7 days:
-
-```bash
-python graph.py            # last 7 days (default)
-python graph.py --days 30  # last N days
-python graph.py --all      # full log
+```cmd
+@echo off
+start "" wt.exe -F --pos 2660,-441 --size 80,30 cmd /k "python C:\path\to\claude_usage_widget.py"
 ```
 
-Output is saved to `usage-graph.png` next to the script. Two-panel chart:
-top shows your 5h session % over time (so you can see when you're hammering
-sessions), bottom shows the weekly % climbing toward reset.
+### Generating a graph
 
-## Files this creates
+```bash
+python graph.py            # last 7 days
+python graph.py --days 30  # last N days
+python graph.py --all      # entire log
+```
 
-- `config.json` — your secrets, never commit.
-- `history.json` — last hour of samples, used for ETA + sparkline.
-- `usage-log.csv` — append-only log of every poll. Used by `graph.py`.
-- `usage-graph.png` — generated by `graph.py`.
+### Refreshing the cookie
 
-All four are in `.gitignore`.
+When the cookie expires:
 
-## Credit
+- **Manual:** edit `config.json`, paste the new cookie.
+- **Helper:** `powershell .\refresh-cookie.ps1`
 
-Built by [Joris Matthijs](https://github.com/) with [Claude Code](https://claude.com/claude-code).
-The cool BMW M tricolor was a side request that turned out nice.
+---
+
+## Getting credentials (manual method)
+
+1. Open [claude.ai](https://claude.ai) in Chrome, sign in.
+2. DevTools (`F12`) > Network > **Fetch/XHR** > navigate to Settings > Usage.
+3. Click the `usage` request.
+4. The **Request URL** contains your `org_id`:
+   `https://claude.ai/api/organizations/<UUID>/usage`
+5. Scroll to **Request Headers** > **Cookie** > copy the full value.
+
+---
+
+## Files created at runtime
+
+| File | Location | Purpose |
+|---|---|---|
+| `config.json` | App Support (macOS) or working dir (Windows) | Credentials — never commit |
+| `history.json` | Same | Recent samples for ETA / sparkline |
+| `usage-log.csv` | Same | Append-only poll log |
+| `usage-graph.png` | Windows working dir | Generated by `graph.py` |
+
+All are in `.gitignore`.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Credit
+
+Built by [Devairen](https://github.com/Devairen) with
+[Claude Code](https://claude.ai/code).

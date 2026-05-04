@@ -1,9 +1,23 @@
+# Credentials & runtime data (both platforms)
 config.json
 history.json
 usage-log.csv
 usage-graph.png
+
+# Python
 __pycache__/
 *.pyc
 .venv/
 venv/
 .env
+
+# Swift / SPM
+.build/
+.swiftpm/
+dist/
+xcuserdata/
+*.xcodeproj/
+*.xcworkspace/
+
+# macOS
+.DS_Store
