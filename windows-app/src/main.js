@@ -132,10 +132,11 @@ function sessionChartSvg({ samples, currentPct, resetISO, burnRate, samplesMinut
   // "now" position as a percentage of the full chart width (for the HTML overlay).
   const nowPct = ((xNow / w) * 100).toFixed(2);
 
-  // Hide "now" label when it's too close to the right edge — it would
-  // collide with the reset-time label. >75% means we're past the reasonable
-  // gap; just drop the redundant "now" since the dotted vertical line shows it.
-  const showNow = parseFloat(nowPct) < 75;
+  // Hide "now" label when it's too close to either edge — it would collide
+  // with the session-start label (left) or reset-time label (right).
+  // The dotted vertical "now" line stays visible regardless.
+  const nowPctNum = parseFloat(nowPct);
+  const showNow = nowPctNum > 18 && nowPctNum < 75;
 
   return `
     <div class="spark">
