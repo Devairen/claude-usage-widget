@@ -184,8 +184,15 @@ function renderUsageSection({
     const resetMs = new Date(resetISO).getTime();
     const usedUpMs = Date.now() + minutesToLimit * 60 * 1000;
     if (!isNaN(resetMs)) {
-      if (usedUpMs >= resetMs) {
+      // 5-minute grace zone: projection landing within 5min of reset is on
+      // the knife-edge — call it "tight" rather than flipping between "will/won't"
+      // every poll as burn rate jitters.
+      const minsAfterReset = (usedUpMs - resetMs) / 60000;
+      if (minsAfterReset > 5) {
         usedUpTxt = `won't hit limit at this pace`;
+      } else if (minsAfterReset > -5) {
+        usedUpTxt = `tight — projecting close to limit`;
+        usedUpClass += " usage-line-warning";
       } else {
         const clock = new Date(usedUpMs).toLocaleTimeString([], {
           hour: "2-digit",
@@ -229,12 +236,15 @@ function renderModels(models) {
   if (!models || !models.length) return "";
   const rows = models
     .map((m) => {
-      const color = colorFor(m.percentage || 0);
+      const pct = m.percentage || 0;
+      const color = colorFor(pct);
+      // Min visible width 1.2% so the bar shape always reads as a bar, not blank.
+      const visibleWidth = pct < 1.2 ? 1.2 : pct;
       return `
       <div class="model-row">
         <div class="model-name">${m.name}</div>
-        <div class="model-bar-wrap"><div class="model-bar" style="width:${(m.percentage || 0).toFixed(1)}%;background:${color}"></div></div>
-        <div class="model-pct">${(m.percentage || 0).toFixed(1)}%</div>
+        <div class="model-bar-wrap"><div class="model-bar" style="width:${visibleWidth.toFixed(1)}%;background:${color};opacity:${pct < 1.2 ? 0.4 : 1}"></div></div>
+        <div class="model-pct">${pct.toFixed(1)}%</div>
       </div>`;
     })
     .join("");

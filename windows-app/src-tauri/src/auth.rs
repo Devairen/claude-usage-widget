@@ -44,7 +44,13 @@ pub fn open_auth_window(app: &AppHandle) -> tauri::Result<()> {
         .resizable(true)
         .center()
         .visible(true)
-        .on_navigation(|nav_url| nav_url.scheme() == "https");
+        // Block only dangerous schemes (file: / javascript: / vbscript:).
+        // Permit https + about:blank + data: so Claude's login page (which uses
+        // sandboxed iframes for OAuth + 3rd-party SSO) can render properly.
+        .on_navigation(|nav_url| {
+            let scheme = nav_url.scheme();
+            !matches!(scheme, "file" | "javascript" | "vbscript")
+        });
 
     if let Some(d) = data_dir {
         let _ = std::fs::create_dir_all(&d);
