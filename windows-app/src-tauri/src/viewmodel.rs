@@ -19,10 +19,11 @@ impl ViewModel {
         }
     }
 
-    /// Seed the burn-rate buffer from on-disk history (last 15 minutes only).
+    /// Seed the burn-rate buffer from on-disk history.
+    /// Keeps the last 5 hours so the projection covers a full session window.
     pub fn bootstrap_from_history(&self, history: &[(f64, f64)]) {
         let now = Utc::now();
-        let cutoff = now - chrono::Duration::minutes(15);
+        let cutoff = now - chrono::Duration::hours(5);
         let mut samples = self.samples.lock().unwrap();
         for (bucket, pct) in history {
             if let Some(date) = DateTime::<Utc>::from_timestamp((*bucket as i64) * 60, 0) {
@@ -125,10 +126,11 @@ impl ViewModel {
     fn add_sample(&self, when: DateTime<Utc>, pct: f64) {
         let mut s = self.samples.lock().unwrap();
         s.push((when, pct));
-        // Keep last 15 minutes
-        let cutoff = when - chrono::Duration::minutes(15);
+        // Keep last 5 hours so projection covers the full session window.
+        let cutoff = when - chrono::Duration::hours(5);
         s.retain(|(d, _)| *d >= cutoff);
         // Detect resets: if pct drops by >20pp, discard older samples
+        // (the session reset wiped your usage to ~0).
         if s.len() >= 2 {
             for i in (1..s.len()).rev() {
                 if s[i].1 < s[i - 1].1 - 20.0 {

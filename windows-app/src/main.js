@@ -41,7 +41,7 @@ function arcSvg(pct, color) {
   const visible = pct <= 0 ? 0 : Math.max(pct, 1.5);
   const dash = (Math.min(visible, 100) / 100) * c;
   return `
-    <svg viewBox="0 0 52 52">
+    <svg viewBox="0 0 52 52" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block">
       <circle class="arc-track" cx="26" cy="26" r="${r}"></circle>
       <circle class="arc-fg" cx="26" cy="26" r="${r}"
         stroke="${color}"
@@ -122,21 +122,24 @@ function sessionChartSvg({ samples, currentPct, resetISO, burnRate, samplesMinut
   // Right-edge x for the reset line
   const xReset = w - 0.5;
 
+  // "now" position as a percentage of the full chart width (for the HTML overlay).
+  const nowPct = ((xNow / w) * 100).toFixed(2);
+
   return `
     <div class="spark">
-      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="chart-svg">
         <line class="chart-grid" x1="0" y1="${y50}" x2="${w}" y2="${y50}"/>
         <line class="chart-limit" x1="0" y1="${y100}" x2="${w}" y2="${y100}"/>
-        <text class="chart-tick chart-tick-limit" x="2" y="${(y100 - 2).toFixed(1)}" text-anchor="start">100%</text>
         ${liveArea ? `<path class="spark-fill" d="${liveArea}"/>` : ""}
         ${liveLine ? `<path class="spark-line" d="${liveLine}"/>` : ""}
         ${projLine ? `<path class="spark-proj" d="${projLine}"/>` : ""}
         <line class="chart-now" x1="${xNow}" y1="${padT}" x2="${xNow}" y2="${h - padB}"/>
         <line class="chart-reset" x1="${xReset}" y1="${padT}" x2="${xReset}" y2="${h - padB}"/>
-        <text class="chart-tick" x="2" y="${h - 3}" text-anchor="start">${startLbl}</text>
-        <text class="chart-tick" x="${xNow.toFixed(1)}" y="${h - 3}" text-anchor="middle">${nowLbl}</text>
-        <text class="chart-tick chart-tick-reset" x="${(w - 2).toFixed(1)}" y="${h - 3}" text-anchor="end">${resetLbl}</text>
       </svg>
+      <span class="chart-overlay chart-limit-label">100%</span>
+      <span class="chart-overlay chart-x-start">${startLbl}</span>
+      <span class="chart-overlay chart-x-now" style="left:${nowPct}%">${nowLbl}</span>
+      <span class="chart-overlay chart-x-reset">${resetLbl}</span>
     </div>`;
 }
 
@@ -155,7 +158,8 @@ function renderUsageSection({
   const color = colorFor(pct);
   const resetTxt = resetTextFromISO(resetISO);
 
-  // "Used up at HH:MM" line — only meaningful with >=10 min of burn samples.
+  // "used up in Xh Ym (HH:MM)" — same shape as the resets line for visual rhythm.
+  // Only meaningful with >=10 min of burn samples.
   // If projected use-up time falls AFTER the reset, show "won't hit limit" instead.
   let usedUpTxt = null;
   let usedUpClass = "usage-line-3";
@@ -175,7 +179,7 @@ function renderUsageSection({
           hour: "2-digit",
           minute: "2-digit",
         });
-        usedUpTxt = `used up at ~${clock}`;
+        usedUpTxt = `used up in ${fmtMinutes(minutesToLimit)} (${clock})`;
         usedUpClass += " usage-line-warning";
       }
     }
@@ -191,13 +195,14 @@ function renderUsageSection({
       })
     : "";
 
+  // data-pct is used by compact mode's CSS ::after to print the % inside the arc
   return `
     <div class="section">
       <div class="section-header">
         <span class="label"><span class="label-icon">${icon}</span>${title}</span>
       </div>
       <div class="usage-row">
-        <div class="arc-wrap">${arcSvg(pct, color)}</div>
+        <div class="arc-wrap" data-pct="${pct.toFixed(0)}%">${arcSvg(pct, color)}</div>
         <div class="usage-meta">
           <div class="usage-line-1">${pct.toFixed(1)}%</div>
           ${resetTxt ? `<div class="usage-line-2">${resetTxt}</div>` : ""}
@@ -250,7 +255,71 @@ let cachedSettings = {
   autostart: true,
   show_models: true,
   show_sparkline: true,
+  compact_mode: false,
 };
+
+function applyBodyMode() {
+  const compact = !!cachedSettings.compact_mode;
+  document.body.classList.toggle("compact", compact);
+  ensureCompactExpandButton(compact);
+}
+
+async function exitCompactMode() {
+  cachedSettings.compact_mode = false;
+  applyBodyMode();
+  await persistSettings({ ...cachedSettings, compact_mode: false });
+}
+
+function ensureCompactExpandButton(compact) {
+  let btn = document.getElementById("compact-expand");
+  if (!compact) {
+    if (btn) btn.remove();
+    document.body.removeEventListener("contextmenu", compactRightClickHandler);
+    document.body.removeEventListener("dblclick", compactDblClickHandler);
+    document.body.removeEventListener("mousedown", compactMouseDownHandler);
+    return;
+  }
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "compact-expand";
+    btn.className = "compact-quit";
+    btn.title = "Expand (double-click or right-click also work)";
+    btn.textContent = "⤢";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      exitCompactMode();
+    });
+    document.body.appendChild(btn);
+  }
+  document.body.addEventListener("contextmenu", compactRightClickHandler);
+  document.body.addEventListener("dblclick", compactDblClickHandler);
+  document.body.addEventListener("mousedown", compactMouseDownHandler);
+}
+
+// JS-driven dragging in compact mode: left-button drag triggers Tauri's
+// startDragging(). Lets us keep dblclick / contextmenu firing normally.
+async function compactMouseDownHandler(e) {
+  if (e.button !== 0) return; // only primary button
+  if (e.target.closest("#compact-expand")) return;
+  if (e.detail >= 2) return; // ignore the mousedown of a dblclick
+  try {
+    const { getCurrentWindow } = window.__TAURI__.window;
+    await getCurrentWindow().startDragging();
+  } catch (err) {
+    console.error("startDragging failed:", err);
+  }
+}
+
+function compactRightClickHandler(e) {
+  e.preventDefault();
+  exitCompactMode();
+}
+
+function compactDblClickHandler(e) {
+  // Don't trigger when double-clicking the expand button itself.
+  if (e.target.closest("#compact-expand")) return;
+  exitCompactMode();
+}
 
 function renderLoaded(s) {
   const cookieWarn =
@@ -299,6 +368,7 @@ function renderState(state) {
   const root = document.getElementById("content");
   const lastUpd = document.getElementById("last-updated");
 
+  applyBodyMode();
   updateFooterAuthAction(state);
 
   switch (state.kind) {
@@ -499,6 +569,7 @@ async function openSettingsModal() {
     show_sparkline: s.show_sparkline ?? true,
     notify_enabled: s.notify_enabled ?? true,
     notify_thresholds: s.notify_thresholds ?? [80, 90],
+    compact_mode: s.compact_mode ?? false,
   };
   openModal("Settings", settingsBody(s));
   bindSettingsToggles(s);
@@ -535,6 +606,7 @@ function settingsBody(s) {
 
   return (
     row("autostart", "Start with Windows", "Run silently in the tray on login.", s.autostart) +
+    row("compact_mode", "Compact widget", "Tiny always-on-top window — ring + % + reset only.", s.compact_mode) +
     row("notify_enabled", "Notifications", "Toast when usage crosses a threshold.", s.notify_enabled) +
     thresholdRow +
     row("show_models", "Show per-model breakdown", "Sonnet / Opus / Design rows.", s.show_models) +
@@ -615,10 +687,12 @@ function bindThresholdEditor(s) {
       autostart: s.autostart ?? true,
       show_models: s.show_models ?? true,
       show_sparkline: s.show_sparkline ?? true,
+      compact_mode: s.compact_mode ?? false,
     };
   } catch (e) {
     console.error("get_settings failed", e);
   }
+  applyBodyMode();
   try {
     const initial = await invoke("get_state");
     renderState(initial);

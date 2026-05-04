@@ -39,3 +39,6 @@ windows-app/.tauri/
 windows-app/src-tauri/icons/android/
 windows-app/src-tauri/icons/ios/
 
+# Dev-only HTML preview harness
+windows-app/test/
+

@@ -106,6 +106,8 @@ struct Settings {
     notify_enabled: Option<bool>,
     /// Thresholds (e.g. [80.0, 90.0]) at which to fire a notification.
     notify_thresholds: Option<Vec<f64>>,
+    /// Compact "desktop widget" mode — small, frameless, semi-transparent, always-on-top.
+    compact_mode: Option<bool>,
 }
 
 fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
@@ -148,7 +150,37 @@ fn set_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
             let _ = mgr.disable();
         }
     }
+
+    // Apply compact_mode side-effect to the main window if changed.
+    if let Some(want_compact) = settings.compact_mode {
+        let prev = load_settings(&app).compact_mode.unwrap_or(false);
+        if want_compact != prev {
+            apply_window_mode(&app, want_compact);
+        }
+    }
+
     save_settings(&app, &settings).map_err(|e| e.to_string())
+}
+
+/// Reconfigure the main window for compact / full mode.
+fn apply_window_mode(app: &AppHandle, compact: bool) {
+    let win = match app.get_webview_window("main") {
+        Some(w) => w,
+        None => return,
+    };
+    if compact {
+        let _ = win.set_decorations(false);
+        let _ = win.set_always_on_top(true);
+        let _ = win.set_skip_taskbar(true);
+        let _ = win.set_size(tauri::LogicalSize::new(220.0_f64, 240.0_f64));
+        let _ = win.set_resizable(true);
+    } else {
+        let _ = win.set_decorations(false);
+        let _ = win.set_always_on_top(false);
+        let _ = win.set_skip_taskbar(false);
+        let _ = win.set_size(tauri::LogicalSize::new(380.0_f64, 560.0_f64));
+        let _ = win.set_resizable(true);
+    }
 }
 
 #[tauri::command]
@@ -222,6 +254,15 @@ fn hide_main_window(app: AppHandle, state: tauri::State<'_, AppState>) -> Result
 pub fn run() {
     env_logger::init();
 
+    // On Windows, toast notifications are attributed to the calling process's
+    // AppUserModelID. Without an explicit AUMID, dev builds inherit the
+    // launcher shell's identity (e.g. "Windows PowerShell") and toasts show
+    // that name + icon instead of ours. Set our identifier so toasts read
+    // "Claude Usage" with the right icon. The shipped installer also writes
+    // this to the registry so it has an associated icon resource.
+    #[cfg(target_os = "windows")]
+    set_windows_app_id();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
@@ -259,6 +300,12 @@ pub fn run() {
 
             // Tray
             build_tray(&app.handle())?;
+
+            // Apply compact mode at startup if it's the saved preference.
+            let saved = load_settings(&app.handle());
+            if saved.compact_mode.unwrap_or(false) {
+                apply_window_mode(&app.handle(), true);
+            }
 
             // Hide main window on launch (autostart silent)
             if let Some(win) = app.get_webview_window("main") {
@@ -500,20 +547,27 @@ fn maybe_notify(app: &AppHandle, pct: f64) {
         .notify_thresholds
         .unwrap_or_else(|| vec![80.0, 90.0]);
 
+    log::info!(
+        "notify check: pct={pct:.1} last={last:.1} enabled={enabled} thresholds={:?}",
+        thresholds
+    );
+
     if enabled {
-        // Fire from highest crossed threshold down — but we only want the
-        // single most-recent crossing per poll, so iterate descending and
-        // notify on the first match.
         let mut sorted = thresholds.clone();
         sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
         for t in &sorted {
             if *last < *t && pct >= *t {
-                let _ = app
+                log::info!("notify firing for threshold {t} (pct={pct})");
+                match app
                     .notification()
                     .builder()
                     .title("Claude Usage")
                     .body(format!("5h session at {:.0}% (crossed {:.0}%)", pct, t))
-                    .show();
+                    .show()
+                {
+                    Ok(_) => log::info!("notify shown ok"),
+                    Err(e) => log::error!("notify failed: {e}"),
+                }
                 break;
             }
         }
@@ -524,6 +578,32 @@ fn maybe_notify(app: &AppHandle, pct: f64) {
         *last = 0.0;
     } else {
         *last = pct;
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn set_windows_app_id() {
+    use std::os::windows::ffi::OsStrExt;
+    let id: Vec<u16> = std::ffi::OsStr::new("dev.devairen.claude-usage")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    // SAFETY: SetCurrentProcessExplicitAppUserModelID expects a null-terminated
+    // wide string; we provide one. Failure is non-fatal (just bad toast branding).
+    type SetAumid = unsafe extern "system" fn(*const u16) -> i32;
+    unsafe {
+        let lib = libloading::Library::new("shell32.dll").ok();
+        if let Some(lib) = lib {
+            if let Ok(sym) = lib.get::<SetAumid>(b"SetCurrentProcessExplicitAppUserModelID") {
+                let hr = sym(id.as_ptr());
+                if hr != 0 {
+                    log::warn!("SetCurrentProcessExplicitAppUserModelID failed: HRESULT {hr:#x}");
+                } else {
+                    log::info!("AUMID set to dev.devairen.claude-usage");
+                }
+            }
+        }
     }
 }
 
