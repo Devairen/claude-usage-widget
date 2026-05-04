@@ -61,7 +61,8 @@ function sessionChartSvg({ samples, currentPct, resetISO, burnRate, samplesMinut
 
   const w = 280;
   const h = 64;
-  const padT = 4;
+  // Extra top room so the "100%" label sits above the limit line, not on it.
+  const padT = 14;
   const padB = 14;
   const innerH = h - padT - padB;
 
@@ -82,23 +83,29 @@ function sessionChartSvg({ samples, currentPct, resetISO, burnRate, samplesMinut
   const y100 = yFor(100);
   const y50 = yFor(50);
 
-  // Real samples (last ~60 min of 5h%). We don't have timestamps in the
-  // sparkline payload — just values. Anchor them to "now - N*60s" backwards.
-  // If samples arrived once per minute, this is good enough.
+  // Real samples — anchor "now - N*60s" backwards.
   let liveLine = "";
   let liveArea = "";
   if (samples && samples.length >= 2) {
-    const minPerSample = 1; // poll cadence is 60s
+    const minPerSample = 1;
     const oldestMs = nowMs - (samples.length - 1) * minPerSample * 60 * 1000;
     const pts = samples.map((v, i) => {
       const t = oldestMs + i * minPerSample * 60 * 1000;
-      return [xFor(t).toFixed(1), yFor(v).toFixed(1)];
+      return [xFor(t), yFor(v)];
     });
-    liveLine = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ");
-    liveArea =
-      liveLine +
-      ` L${pts[pts.length - 1][0]},${(h - padB).toFixed(1)}` +
-      ` L${pts[0][0]},${(h - padB).toFixed(1)} Z`;
+    liveLine = pts
+      .map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`)
+      .join(" ");
+    // Only fill the area when samples span at least 30 min of session — below
+    // that, a tiny strip near "now" looks broken. Just show the line.
+    const spanMin = (samples.length - 1) * minPerSample;
+    if (spanMin >= 30) {
+      const bottom = (h - padB).toFixed(1);
+      liveArea =
+        liveLine +
+        ` L${pts[pts.length - 1][0].toFixed(1)},${bottom}` +
+        ` L${pts[0][0].toFixed(1)},${bottom} Z`;
+    }
   }
 
   // Projection line — only meaningful with >=10 min of data
@@ -125,6 +132,11 @@ function sessionChartSvg({ samples, currentPct, resetISO, burnRate, samplesMinut
   // "now" position as a percentage of the full chart width (for the HTML overlay).
   const nowPct = ((xNow / w) * 100).toFixed(2);
 
+  // Hide "now" label when it's too close to the right edge — it would
+  // collide with the reset-time label. >75% means we're past the reasonable
+  // gap; just drop the redundant "now" since the dotted vertical line shows it.
+  const showNow = parseFloat(nowPct) < 75;
+
   return `
     <div class="spark">
       <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="chart-svg">
@@ -138,7 +150,7 @@ function sessionChartSvg({ samples, currentPct, resetISO, burnRate, samplesMinut
       </svg>
       <span class="chart-overlay chart-limit-label">100%</span>
       <span class="chart-overlay chart-x-start">${startLbl}</span>
-      <span class="chart-overlay chart-x-now" style="left:${nowPct}%">${nowLbl}</span>
+      ${showNow ? `<span class="chart-overlay chart-x-now" style="left:${nowPct}%">${nowLbl}</span>` : ""}
       <span class="chart-overlay chart-x-reset">${resetLbl}</span>
     </div>`;
 }

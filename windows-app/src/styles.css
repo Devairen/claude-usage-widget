@@ -204,7 +204,7 @@ main {
   line-height: 1;
 }
 .chart-limit-label {
-  top: 2px; left: 4px;
+  top: 1px; left: 4px;
   color: var(--warn); font-weight: 600; opacity: 0.9;
 }
 .chart-x-start { bottom: 2px; left: 4px; }
