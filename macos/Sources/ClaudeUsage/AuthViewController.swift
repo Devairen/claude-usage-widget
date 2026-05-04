@@ -4,8 +4,10 @@ import WebKit
 final class AuthViewController: NSViewController, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
     private var statusLabel: NSTextField!
+    private var retryButton: NSButton!
     private var credentialsCaptured = false
     private var extractionInProgress = false
+    private var extractionRetries = 0
 
     /// Called with (orgId, cookieString) on successful login.
     var onComplete: ((String, String) -> Void)?
@@ -13,11 +15,23 @@ final class AuthViewController: NSViewController, WKNavigationDelegate, WKUIDele
     override func loadView() {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 640))
 
+        // Bottom bar with status + retry button
+        let bottomBar = NSView()
+        bottomBar.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(bottomBar)
+
         statusLabel = NSTextField(labelWithString: "Checking for existing session…")
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(statusLabel)
+        bottomBar.addSubview(statusLabel)
+
+        retryButton = NSButton(title: "Retry", target: self, action: #selector(retryExtraction))
+        retryButton.controlSize = .small
+        retryButton.bezelStyle = .rounded
+        retryButton.isHidden = true
+        retryButton.translatesAutoresizingMaskIntoConstraints = false
+        bottomBar.addSubview(retryButton)
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
@@ -31,11 +45,19 @@ final class AuthViewController: NSViewController, WKNavigationDelegate, WKUIDele
             webView.topAnchor.constraint(equalTo: container.topAnchor),
             webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
+            webView.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
 
-            statusLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            statusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
-            statusLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+            bottomBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bottomBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            bottomBar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            bottomBar.heightAnchor.constraint(equalToConstant: 32),
+
+            statusLabel.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 12),
+            statusLabel.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: retryButton.leadingAnchor, constant: -8),
+
+            retryButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -12),
+            retryButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
         ])
 
         self.view = container
@@ -43,7 +65,6 @@ final class AuthViewController: NSViewController, WKNavigationDelegate, WKUIDele
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Observe cookie changes — catches login even when didFinish misses it
         webView.configuration.websiteDataStore.httpCookieStore.add(self)
         checkExistingSession()
     }
@@ -58,7 +79,8 @@ final class AuthViewController: NSViewController, WKNavigationDelegate, WKUIDele
             DispatchQueue.main.async {
                 if hasSession {
                     self.statusLabel.stringValue = "Found existing session — refreshing credentials…"
-                    self.beginExtraction()
+                    // Load claude.ai so we have a page context for fetch()
+                    self.webView.load(URLRequest(url: URL(string: "https://claude.ai/")!))
                 } else {
                     self.statusLabel.stringValue = "Sign in to your Claude account"
                     self.webView.load(URLRequest(url: URL(string: "https://claude.ai/login")!))
@@ -67,15 +89,65 @@ final class AuthViewController: NSViewController, WKNavigationDelegate, WKUIDele
         }
     }
 
-    // MARK: - Credential extraction
+    // MARK: - Credential extraction via JS fetch (no page navigation needed)
 
-    /// Navigate the WebView to the organizations API endpoint.
-    /// The WebView sends its own cookies automatically — no JS fetch needed.
     private func beginExtraction() {
         guard !extractionInProgress else { return }
         extractionInProgress = true
-        let url = URL(string: "https://claude.ai/api/organizations")!
-        webView.load(URLRequest(url: url))
+        retryButton.isHidden = true
+        statusLabel.stringValue = "Fetching organization info…"
+
+        // Use fetch() from the page context — same-origin, uses cookies automatically,
+        // no Cloudflare challenge, returns clean JSON (not browser-rendered HTML).
+        // callAsyncJavaScript wraps this in an async function automatically — just provide the body.
+        let js = """
+        const r = await fetch('/api/organizations', {credentials: 'same-origin'});
+        if (!r.ok) return JSON.stringify({error: 'HTTP ' + r.status});
+        const data = await r.json();
+        return JSON.stringify(data);
+        """
+
+        webView.callAsyncJavaScript(js, in: nil, in: .page) { [weak self] result in
+            guard let self else { return }
+
+            switch result {
+            case .success(let value):
+                guard let jsonString = value as? String,
+                      let jsonData = jsonString.data(using: .utf8) else {
+                    self.handleExtractionFailure("Empty response from API")
+                    return
+                }
+
+                // Check for error response
+                struct ErrorResp: Codable { let error: String? }
+                if let errResp = try? JSONDecoder().decode(ErrorResp.self, from: jsonData),
+                   let errMsg = errResp.error {
+                    self.handleExtractionFailure("API error: \(errMsg)")
+                    return
+                }
+
+                // Parse org list
+                struct Org: Codable { let uuid: String }
+                if let orgs = try? JSONDecoder().decode([Org].self, from: jsonData),
+                   let org = orgs.first {
+                    self.captureCredentials(orgId: org.uuid)
+                    return
+                }
+
+                self.handleExtractionFailure("No organizations found in response")
+
+            case .failure(let error):
+                self.handleExtractionFailure("JS error: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    @objc private func retryExtraction() {
+        extractionInProgress = false
+        extractionRetries = 0
+        statusLabel.stringValue = "Retrying…"
+        // Navigate to claude.ai first to ensure we have page context
+        webView.load(URLRequest(url: URL(string: "https://claude.ai/")!))
     }
 
     // MARK: - WKNavigationDelegate
@@ -83,97 +155,111 @@ final class AuthViewController: NSViewController, WKNavigationDelegate, WKUIDele
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard !credentialsCaptured else { return }
 
-        // If we navigated to /api/organizations, read the JSON response body
-        if webView.url?.path == "/api/organizations" {
-            readOrganizations()
-            return
+        // If we're on claude.ai (not login or OAuth), try extraction
+        if let host = webView.url?.host, host.contains("claude.ai"),
+           webView.url?.path != "/login" {
+            checkForSessionThenExtract()
         }
-
-        // Otherwise, check if the user just logged in (sessionKey appeared)
-        checkForSession()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        handleNavigationError(error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        handleNavigationError(error)
+    }
+
+    private func handleNavigationError(_ error: Error) {
+        // Ignore cancellations (e.g. from redirects)
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled { return }
+
         if extractionInProgress {
             DispatchQueue.main.async {
-                self.statusLabel.stringValue = "Network error — try again"
+                self.statusLabel.stringValue = "Network error — click Retry"
+                self.retryButton.isHidden = false
                 self.extractionInProgress = false
             }
         }
     }
 
-    private func checkForSession() {
+    private func checkForSessionThenExtract() {
         webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
             guard let self, !self.credentialsCaptured else { return }
             let hasSession = cookies.contains { $0.domain.contains("claude.ai") && $0.name == "sessionKey" }
-            if hasSession {
+            if hasSession && !self.extractionInProgress {
                 DispatchQueue.main.async {
-                    self.statusLabel.stringValue = "Signed in — fetching organization info…"
                     self.beginExtraction()
                 }
             }
         }
     }
 
-    private func readOrganizations() {
-        // The WebView loaded /api/organizations as a page — the response body is the JSON
-        webView.evaluateJavaScript("document.body.innerText") { [weak self] result, error in
+    private func captureCredentials(orgId: String) {
+        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
             guard let self else { return }
+            let cookieString = cookies
+                .filter { $0.domain.contains("claude.ai") }
+                .map { "\($0.name)=\($0.value)" }
+                .joined(separator: "; ")
 
-            guard let jsonString = result as? String,
-                  let jsonData = jsonString.data(using: .utf8) else {
+            guard !cookieString.isEmpty else {
                 DispatchQueue.main.async {
-                    self.statusLabel.stringValue = "Failed to read organization data. Retrying…"
-                    self.extractionInProgress = false
-                    // Might have been redirected to login — check again
-                    self.checkForSession()
+                    self.handleExtractionFailure("No cookies found")
                 }
                 return
             }
 
-            struct Org: Codable { let uuid: String }
-            guard let orgs = try? JSONDecoder().decode([Org].self, from: jsonData),
-                  let org = orgs.first else {
-                DispatchQueue.main.async {
-                    self.statusLabel.stringValue = "No organizations found — check your account."
-                    self.extractionInProgress = false
-                }
-                return
-            }
-
-            // Got org_id — now grab the cookie string
-            self.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                let cookieString = cookies
-                    .filter { $0.domain.contains("claude.ai") }
-                    .map { "\($0.name)=\($0.value)" }
-                    .joined(separator: "; ")
-
-                DispatchQueue.main.async {
-                    self.credentialsCaptured = true
-                    self.statusLabel.stringValue = "Done — credentials saved."
-                    self.onComplete?(org.uuid, cookieString)
-                }
+            DispatchQueue.main.async {
+                self.credentialsCaptured = true
+                self.statusLabel.stringValue = "Done — credentials saved."
+                self.retryButton.isHidden = true
+                self.onComplete?(orgId, cookieString)
             }
         }
     }
 
-    // MARK: - Navigation Policy (HTTPS only — blocks javascript:/file:/data: schemes)
+    private func handleExtractionFailure(_ reason: String) {
+        extractionInProgress = false
+
+        if extractionRetries < 2 {
+            extractionRetries += 1
+            statusLabel.stringValue = "\(reason). Retrying (\(extractionRetries)/2)…"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self, !self.credentialsCaptured else { return }
+                self.beginExtraction()
+            }
+        } else {
+            statusLabel.stringValue = "\(reason). Click Retry or check your account."
+            retryButton.isHidden = false
+        }
+    }
+
+    // MARK: - Navigation Policy (block dangerous schemes only)
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = navigationAction.request.url, url.scheme == "https" else {
+        guard let url = navigationAction.request.url else {
             decisionHandler(.cancel)
             return
         }
-        decisionHandler(.allow)
+
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme == "https" || scheme == "http" || scheme == "about" {
+            decisionHandler(.allow)
+        } else {
+            decisionHandler(.cancel)
+        }
     }
 
     // MARK: - WKUIDelegate (handle OAuth popups)
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // Only allow HTTPS popups (OAuth redirects)
-        if let url = navigationAction.request.url, url.scheme == "https" {
+        if let url = navigationAction.request.url,
+           let scheme = url.scheme?.lowercased(),
+           scheme == "https" || scheme == "http" {
             webView.load(URLRequest(url: url))
         }
         return nil
@@ -190,7 +276,9 @@ extension AuthViewController: WKHTTPCookieStoreObserver {
             guard let self, !self.credentialsCaptured, !self.extractionInProgress else { return }
             let hasSession = cookies.contains { $0.domain.contains("claude.ai") && $0.name == "sessionKey" }
             if hasSession {
-                DispatchQueue.main.async {
+                // Wait a moment for the post-login redirect to settle, then extract
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    guard let self, !self.credentialsCaptured, !self.extractionInProgress else { return }
                     self.statusLabel.stringValue = "Signed in — fetching organization info…"
                     self.beginExtraction()
                 }

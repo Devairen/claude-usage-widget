@@ -6,6 +6,14 @@ struct PopoverView: View {
     var onOpenSettings: () -> Void
     var onSignIn: () -> Void
 
+    private var settings: AppSettings {
+        configManager.loadSettings()
+    }
+
+    private var accentColor: Color {
+        Theme.accent(from: settings)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -23,6 +31,7 @@ struct PopoverView: View {
             footer
         }
         .frame(width: 272)
+        .background(.regularMaterial)
     }
 
     // MARK: - Header
@@ -30,7 +39,7 @@ struct PopoverView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(Theme.accent)
+                .fill(accentColor)
                 .frame(width: 8, height: 8)
             Text("Claude Usage")
                 .font(.system(size: 13, weight: .semibold))
@@ -60,7 +69,7 @@ struct PopoverView: View {
         VStack(spacing: 8) {
             Image(systemName: "key.fill")
                 .font(.title2)
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(accentColor)
             Text("Setup Required")
                 .font(.system(size: 13, weight: .medium))
             Text("Sign in to start tracking\nyour Claude usage.")
@@ -71,7 +80,7 @@ struct PopoverView: View {
                 onSignIn()
             }
             .buttonStyle(.borderedProminent)
-            .tint(Theme.accent)
+            .tint(accentColor)
             .controlSize(.small)
 
             Button("Manual Setup…") {
@@ -101,7 +110,7 @@ struct PopoverView: View {
                 onSignIn()
             }
             .buttonStyle(.borderedProminent)
-            .tint(Theme.accent)
+            .tint(accentColor)
             .controlSize(.small)
         }
         .frame(maxWidth: .infinity)
@@ -127,7 +136,8 @@ struct PopoverView: View {
     // MARK: - Usage Content
 
     private var usageContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let s = settings
+        return VStack(alignment: .leading, spacing: 0) {
             // 5h session (with pace estimate)
             if let fiveHour = viewModel.fiveHour, fiveHour.utilization != nil {
                 UsageSectionView(
@@ -135,6 +145,7 @@ struct PopoverView: View {
                     icon: "timer",
                     percentage: fiveHour.utilization ?? 0,
                     resetISO: fiveHour.resetsAt,
+                    settings: s,
                     burnRate: viewModel.burnRatePerMinute,
                     minutesToLimit: viewModel.minutesToLimit,
                     willHitLimit: viewModel.willHitLimitBeforeReset
@@ -151,7 +162,8 @@ struct PopoverView: View {
                     title: "Weekly (7d)",
                     icon: "calendar",
                     percentage: sevenDay.utilization ?? 0,
-                    resetISO: sevenDay.resetsAt
+                    resetISO: sevenDay.resetsAt,
+                    settings: s
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
@@ -161,7 +173,7 @@ struct PopoverView: View {
                 if !viewModel.models.isEmpty {
                     VStack(spacing: 4) {
                         ForEach(viewModel.models) { model in
-                            ModelRowView(model: model)
+                            ModelRowView(model: model, settings: s)
                         }
                     }
                     .padding(.horizontal, 16)

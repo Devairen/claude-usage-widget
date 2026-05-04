@@ -5,6 +5,7 @@ struct ArcView: View {
     var size: CGFloat = 36
     var lineWidth: CGFloat = 4
     var showLabel: Bool = true
+    var settings: AppSettings? = nil
 
     var body: some View {
         ZStack {
@@ -16,7 +17,7 @@ struct ArcView: View {
             Circle()
                 .trim(from: 0, to: min(percentage / 100, 1))
                 .stroke(
-                    Theme.swiftUIColor(for: percentage),
+                    Theme.swiftUIColor(for: percentage, settings: settings),
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))

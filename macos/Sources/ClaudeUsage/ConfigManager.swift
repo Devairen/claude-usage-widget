@@ -2,6 +2,7 @@ import Foundation
 
 final class ConfigManager {
     private let configURL: URL
+    private let settingsURL: URL
     let appDirectory: URL
 
     init() {
@@ -11,6 +12,7 @@ final class ConfigManager {
         // Restrict directory to owner-only (rwx------)
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: appDirectory.path)
         configURL = appDirectory.appendingPathComponent("config.json")
+        settingsURL = appDirectory.appendingPathComponent("settings.json")
     }
 
     func load() -> AppConfig? {
@@ -35,4 +37,18 @@ final class ConfigManager {
     }
 
     var configPath: String { configURL.path }
+
+    // MARK: - Display Settings
+
+    func loadSettings() -> AppSettings {
+        guard let data = try? Data(contentsOf: settingsURL) else { return AppSettings() }
+        return (try? JSONDecoder().decode(AppSettings.self, from: data)) ?? AppSettings()
+    }
+
+    func saveSettings(_ settings: AppSettings) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(settings)
+        try data.write(to: settingsURL, options: .atomic)
+    }
 }

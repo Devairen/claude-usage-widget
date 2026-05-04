@@ -56,6 +56,15 @@ struct AppConfig: Codable {
     }
 }
 
+// MARK: - Display Settings (persisted separately from credentials)
+
+struct AppSettings: Codable {
+    var showPercentageInBar: Bool = false
+    var showClaudeIcon: Bool = false
+    var customAccentColorHex: String? = nil  // e.g. "#FF6B35"
+    var alwaysUseAccentColor: Bool = false   // true = don't shift to red at high usage
+}
+
 // MARK: - Errors
 
 enum UsageError: Error, LocalizedError {
@@ -79,4 +88,5 @@ enum UsageError: Error, LocalizedError {
 
 extension Notification.Name {
     static let configUpdated = Notification.Name("ClaudeUsageConfigUpdated")
+    static let settingsUpdated = Notification.Name("ClaudeUsageSettingsUpdated")
 }

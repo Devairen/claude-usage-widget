@@ -8,46 +8,49 @@ struct SettingsView: View {
     @State private var showSaved = false
     @State private var saveError: String?
 
+    // Display settings
+    @State private var showPercentageInBar = false
+    @State private var showClaudeIcon = false
+    @State private var customAccentHex = ""
+    @State private var pickerColor = Color(nsColor: Theme.claudeOrange)
+    @State private var alwaysUseAccentColor = false
+
     private let configManager = ConfigManager()
+
+    private var isConnected: Bool {
+        configManager.load() != nil
+    }
 
     var body: some View {
         Form {
+            // MARK: - Account
             Section {
-                Button("Sign in to Claude") {
+                Button(isConnected ? "Switch Account" : "Sign in to Claude") {
                     onSignIn?()
                 }
                 .buttonStyle(.borderedProminent)
             } header: {
-                Text("Quick Setup")
+                Text("Account")
             } footer: {
-                Text("Opens claude.ai — sign in and your credentials are captured automatically.")
+                Text(isConnected
+                     ? "Already connected. Use this to sign in with a different account."
+                     : "Opens claude.ai — sign in and your credentials are captured automatically.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
+            // MARK: - Manual Setup
             Section {
                 TextField("Organization ID", text: $orgId)
                     .textFieldStyle(.roundedBorder)
-                    .help("UUID from the claude.ai usage API URL")
 
                 SecureField("Cookie", text: $cookie)
                     .textFieldStyle(.roundedBorder)
-                    .help("Full Cookie header value from DevTools")
-            } header: {
-                Text("Manual Setup")
-            } footer: {
-                Text("claude.ai \u{2192} DevTools \u{2192} Network \u{2192} reload Settings/Usage \u{2192} copy the org ID from the URL and the Cookie header.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
-            Section {
                 HStack {
-                    Button("Save") {
-                        save()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(orgId.isEmpty || cookie.isEmpty)
+                    Button("Save") { save() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(orgId.isEmpty || cookie.isEmpty)
 
                     if showSaved {
                         Label("Saved", systemImage: "checkmark.circle.fill")
@@ -61,14 +64,102 @@ struct SettingsView: View {
                             .font(.system(size: 12))
                     }
                 }
+            } header: {
+                Text("Manual Setup")
+            } footer: {
+                Text("claude.ai > DevTools > Network > Settings/Usage > copy org ID from URL and Cookie header.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
+            // MARK: - Display
+            Section {
+                Toggle("Show percentage in menu bar", isOn: $showPercentageInBar)
+                    .onChange(of: showPercentageInBar) { saveDisplaySettings() }
+
+                Toggle("Show Claude icon in menu bar", isOn: $showClaudeIcon)
+                    .onChange(of: showClaudeIcon) { saveDisplaySettings() }
+
+                Toggle("Keep accent color at high usage", isOn: $alwaysUseAccentColor)
+                    .onChange(of: alwaysUseAccentColor) { saveDisplaySettings() }
+
+                // Color picker — label, hex field, picker, reset on one clean line
+                LabeledContent("Accent color") {
+                    HStack(spacing: 8) {
+                        TextField("#hex", text: $customAccentHex)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 96)
+                            .font(.system(size: 12, design: .monospaced))
+                            .onSubmit {
+                                syncPickerFromHex()
+                                saveDisplaySettings()
+                            }
+
+                        ColorPicker("", selection: $pickerColor, supportsOpacity: false)
+                            .labelsHidden()
+                            .onChange(of: pickerColor) {
+                                customAccentHex = hexFromColor(pickerColor)
+                                saveDisplaySettings()
+                            }
+
+                        if !customAccentHex.isEmpty {
+                            Button {
+                                customAccentHex = ""
+                                pickerColor = Theme.defaultAccent
+                                saveDisplaySettings()
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Reset to default")
+                        }
+                    }
+                }
+                // Live preview at different usage levels
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Preview")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 12) {
+                        ForEach([20.0, 45.0, 75.0, 95.0], id: \.self) { pct in
+                            VStack(spacing: 4) {
+                                ArcView(
+                                    percentage: pct,
+                                    size: 32,
+                                    lineWidth: 3.5,
+                                    showLabel: false,
+                                    settings: previewSettings
+                                )
+                                Text("\(Int(pct))%")
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Theme.swiftUIColor(for: pct, settings: previewSettings))
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+
+            } header: {
+                Text("Display")
+            } footer: {
+                Text("\"Keep accent color\" prevents the arc from shifting to red at high usage.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // MARK: - Info
             Section {
                 LabeledContent("Config file") {
                     Text(configManager.configPath)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
 
                 if let age = configManager.configAgeDays {
@@ -82,18 +173,50 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 400)
-        .onAppear { loadConfig() }
+        .frame(width: 460, height: 560)
+        .onAppear { loadAll() }
         .onReceive(NotificationCenter.default.publisher(for: .configUpdated)) { _ in
-            loadConfig()
+            loadAll()
         }
     }
 
-    private func loadConfig() {
+    // MARK: - Helpers
+
+    /// Settings reflecting the current UI state (for live preview).
+    private var previewSettings: AppSettings {
+        AppSettings(
+            showPercentageInBar: showPercentageInBar,
+            showClaudeIcon: showClaudeIcon,
+            customAccentColorHex: customAccentHex.isEmpty ? nil : customAccentHex,
+            alwaysUseAccentColor: alwaysUseAccentColor
+        )
+    }
+
+    private func syncPickerFromHex() {
+        if let nsColor = Theme.nsColor(fromHex: customAccentHex) {
+            pickerColor = Color(nsColor: nsColor)
+        }
+    }
+
+    private func hexFromColor(_ color: Color) -> String {
+        let nsColor = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+        let r = Int(nsColor.redComponent * 255)
+        let g = Int(nsColor.greenComponent * 255)
+        let b = Int(nsColor.blueComponent * 255)
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
+
+    private func loadAll() {
         if let config = configManager.load() {
             orgId = config.orgId
             cookie = config.cookie
         }
+        let settings = configManager.loadSettings()
+        showPercentageInBar = settings.showPercentageInBar
+        showClaudeIcon = settings.showClaudeIcon
+        alwaysUseAccentColor = settings.alwaysUseAccentColor
+        customAccentHex = settings.customAccentColorHex ?? ""
+        syncPickerFromHex()
     }
 
     private func save() {
@@ -112,5 +235,16 @@ struct SettingsView: View {
         } catch {
             saveError = "Failed to save: \(error.localizedDescription)"
         }
+    }
+
+    private func saveDisplaySettings() {
+        let settings = AppSettings(
+            showPercentageInBar: showPercentageInBar,
+            showClaudeIcon: showClaudeIcon,
+            customAccentColorHex: customAccentHex.isEmpty ? nil : customAccentHex,
+            alwaysUseAccentColor: alwaysUseAccentColor
+        )
+        try? configManager.saveSettings(settings)
+        NotificationCenter.default.post(name: .settingsUpdated, object: nil)
     }
 }

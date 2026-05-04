@@ -5,6 +5,7 @@ struct UsageSectionView: View {
     let icon: String
     let percentage: Double
     let resetISO: String?
+    var settings: AppSettings? = nil
 
     // Optional pace estimate (5h session only)
     var burnRate: Double? = nil       // %/min
@@ -18,12 +19,12 @@ struct UsageSectionView: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
-                ArcView(percentage: percentage, size: 40, lineWidth: 4.5)
+                ArcView(percentage: percentage, size: 40, lineWidth: 4.5, settings: settings)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("\(Int(percentage))% used")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.swiftUIColor(for: percentage))
+                        .foregroundStyle(Theme.swiftUIColor(for: percentage, settings: settings))
 
                     if let resetText = Theme.resetText(from: resetISO) {
                         HStack(spacing: 4) {

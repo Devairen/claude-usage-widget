@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ModelRowView: View {
     let model: ModelUsage
+    var settings: AppSettings? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -17,7 +18,7 @@ struct ModelRowView: View {
                         .fill(Color.primary.opacity(0.06))
 
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Theme.swiftUIColor(for: model.percentage))
+                        .fill(Theme.swiftUIColor(for: model.percentage, settings: settings))
                         .frame(width: max(geo.size.width * min(model.percentage / 100, 1), 2))
                         .animation(.easeInOut(duration: 0.3), value: model.percentage)
                 }
