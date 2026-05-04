@@ -21,3 +21,17 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Tauri / Rust (Windows app)
+windows-app/node_modules/
+windows-app/src-tauri/target/
+windows-app/src-tauri/gen/
+windows-app/dist/
+windows-app/.tauri/
+
+# Cargo build artifacts
+**/target/
+
+# Editor scratch
+*.bak
+

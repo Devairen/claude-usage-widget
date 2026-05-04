@@ -4,10 +4,12 @@ Monitor your **real** Claude.ai usage limits — the same numbers shown under
 Settings > Usage, but always visible, refreshed automatically, and with extras
 like burn-rate estimates and trend logging.
 
-Available as a **native macOS menu-bar app** (Swift/SwiftUI) and a
-**Windows terminal widget** (Python/Rich).
+Available as:
+- **Native macOS menu-bar app** (Swift/SwiftUI)
+- **Native Windows app** (Tauri/Rust + WebView2) — main Windows version
+- **Windows terminal widget** (Python/Rich) — lightweight alternative
 
-Both versions call the same undocumented private API the Claude apps use
+All versions call the same undocumented private API the Claude apps use
 internally, so you see the exact figures — not estimates from local logs.
 
 ## Caveats — read this first
@@ -68,11 +70,52 @@ Config is stored in `~/Library/Application Support/ClaudeUsage/config.json`
 
 ---
 
-## Windows (terminal widget)
+## Windows (native app)
+
+A Tauri desktop app (Rust backend + HTML/CSS/JS frontend, ~10 MB installer)
+that lives in your system tray. Auto-starts with Windows, polls silently,
+and auto-shows its window whenever Claude Desktop is running.
+
+### Features
+
+- Tray icon with circular usage arc — color shifts tan → orange → deep → red
+  as utilization climbs.
+- Window auto-shows on your last-known position whenever `claude.exe` is
+  running, auto-hides when you close it (manual override sticks until next
+  Claude session).
+- One-click sign-in via embedded WebView2 — no DevTools cookie pasting.
+- Native Windows toast notifications at 80% / 95% thresholds.
+- CSV log compatible with the macOS/Python widget's `graph.py`.
+- Auto-start with Windows enabled by default.
+
+### Build & run
+
+Requires **Rust** (https://rustup.rs) and **Node.js 18+**. WebView2 ships
+with Windows 11 / modern Win10; if missing, the installer fetches it.
+
+```powershell
+cd windows-app
+npm install
+npm run build           # produces an MSI/NSIS installer in src-tauri/target/release/bundle/
+```
+
+For development:
+```powershell
+npm run dev             # hot-reload dev mode
+```
+
+Config and logs live in `%APPDATA%\dev.devairen.claude-usage\` (file-system
+permissions managed by Windows ACLs, owner-only by default).
+
+---
+
+## Windows (terminal widget — lightweight alternative)
 
 A Python terminal widget rendered with [Rich](https://github.com/Textualize/rich)
 and TLS-fingerprinted requests via
 [curl_cffi](https://github.com/lexiforest/curl_cffi).
+Use this if you don't want to install Rust + Node, or prefer a console panel
+to a native app.
 
 ![Claude Usage Widget](windows/screenshot.png)
 

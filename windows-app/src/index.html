@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Usage</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header data-tauri-drag-region class="app-header">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span class="brand-name">Claude Usage</span>
+      </div>
+      <button id="hide-btn" class="icon-btn" title="Hide">&times;</button>
+    </header>
+
+    <main id="content">
+      <div class="loading">Loading…</div>
+    </main>
+
+    <footer class="app-footer">
+      <span id="last-updated" class="muted small"></span>
+      <div class="actions">
+        <button id="signin-btn" class="link-btn">Sign in</button>
+        <button id="quit-btn" class="link-btn">Quit</button>
+      </div>
+    </footer>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
