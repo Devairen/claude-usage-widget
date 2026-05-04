@@ -78,19 +78,23 @@ pub fn open_auth_window(app: &AppHandle) -> tauri::Result<()> {
                     let _ = read_orgs_and_save(&window, &app, &captured).await;
                 } else if host == "claude.ai" && path == "/login" {
                     // Try to prefill the email field if we have a candidate.
+                    // Pass the value via JSON.parse so any quotes/backslashes
+                    // can't break out of the embedded JS string.
                     if let Some(e) = email.as_ref() {
-                        let escaped = e.replace('\\', "\\\\").replace('\'', "\\'");
-                        let js = format!(
-                            r#"(function(){{
-                                const el = document.querySelector('input[type=email], input[name=email]');
-                                if (el && !el.value) {{
-                                    el.value = '{}';
-                                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                }}
-                            }})();"#,
-                            escaped
-                        );
-                        let _ = window.eval(&js);
+                        if let Ok(json_val) = serde_json::to_string(e) {
+                            let js = format!(
+                                r#"(function(){{
+                                    const v = JSON.parse({});
+                                    const el = document.querySelector('input[type=email], input[name=email]');
+                                    if (el && !el.value) {{
+                                        el.value = v;
+                                        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    }}
+                                }})();"#,
+                                serde_json::to_string(&json_val).unwrap_or_else(|_| "\"\"".into())
+                            );
+                            let _ = window.eval(&js);
+                        }
                     }
                 } else if host == "claude.ai"
                     && !path.starts_with("/api/")
