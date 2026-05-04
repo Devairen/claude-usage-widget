@@ -22,10 +22,23 @@
     <footer class="app-footer">
       <span id="last-updated" class="muted small"></span>
       <div class="actions">
+        <button id="history-btn" class="link-btn">History</button>
+        <button id="settings-btn" class="link-btn">Settings</button>
         <button id="signin-btn" class="link-btn">Sign in</button>
         <button id="quit-btn" class="link-btn">Quit</button>
       </div>
     </footer>
+
+    <!-- Modal overlay used for History + Settings -->
+    <div id="modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <span id="modal-title">Title</span>
+          <button id="modal-close" class="icon-btn">&times;</button>
+        </div>
+        <div id="modal-body"></div>
+      </div>
+    </div>
 
     <script type="module" src="main.js"></script>
   </body>

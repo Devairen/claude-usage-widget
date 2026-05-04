@@ -9,11 +9,13 @@ struct Org {
     uuid: String,
 }
 
-/// Open the sign-in window. The window navigates to claude.ai/login first;
-/// once the user signs in, we navigate to /api/organizations to read the
-/// org_id, capture cookies, save config, and close.
+/// Open the sign-in window. Navigates to /login. Once the user signs in,
+/// the post-login redirect is detected and we navigate to /api/organizations
+/// to read the org_id, capture cookies, save config, and close the window.
 pub fn open_auth_window(app: &AppHandle) -> tauri::Result<()> {
+    log::info!("auth: open_auth_window invoked");
     if let Some(existing) = app.get_webview_window("auth") {
+        log::info!("auth: window already exists, showing");
         existing.show()?;
         existing.set_focus()?;
         return Ok(());
@@ -23,15 +25,33 @@ pub fn open_auth_window(app: &AppHandle) -> tauri::Result<()> {
     let captured_for_handler = captured.clone();
     let app_for_handler = app.clone();
 
+    // Best-effort prefill: pull the user's Windows account UPN (often an email).
+    let prefill_email = windows_account_email();
+
+    // Persistent webview data directory keeps cookies/local-storage across opens
+    // so a returning user with an active session goes straight to /api/organizations
+    // without a re-login.
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("auth-webview"));
+
     let url = WebviewUrl::External("https://claude.ai/login".parse().unwrap());
-    let _win = WebviewWindowBuilder::new(app, "auth", url)
+    let mut builder = WebviewWindowBuilder::new(app, "auth", url)
         .title("Sign in to Claude")
         .inner_size(480.0, 700.0)
         .resizable(true)
         .center()
         .visible(true)
-        // Block non-https schemes (defense in depth — javascript:/data:/file: must not navigate).
-        .on_navigation(|nav_url| nav_url.scheme() == "https")
+        .on_navigation(|nav_url| nav_url.scheme() == "https");
+
+    if let Some(d) = data_dir {
+        let _ = std::fs::create_dir_all(&d);
+        builder = builder.data_directory(d);
+    }
+
+    let win = builder
         .on_page_load(move |window, payload| {
             if !matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 return;
@@ -39,6 +59,7 @@ pub fn open_auth_window(app: &AppHandle) -> tauri::Result<()> {
             let url = payload.url().clone();
             let captured = captured_for_handler.clone();
             let app = app_for_handler.clone();
+            let email = prefill_email.clone();
 
             tauri::async_runtime::spawn(async move {
                 if *captured.lock().unwrap() {
@@ -47,18 +68,79 @@ pub fn open_auth_window(app: &AppHandle) -> tauri::Result<()> {
                 let host = url.host_str().unwrap_or("");
                 let path = url.path();
 
-                // Exact-path match prevents tricks like /api/organizationsXYZ.
                 if host == "claude.ai" && path == "/api/organizations" {
                     let _ = read_orgs_and_save(&window, &app, &captured).await;
-                } else if host == "claude.ai" && path != "/login" && !path.starts_with("/api/") {
-                    // User signed in - navigate to org-list endpoint to capture org_id.
+                } else if host == "claude.ai" && path == "/login" {
+                    // Try to prefill the email field if we have a candidate.
+                    if let Some(e) = email.as_ref() {
+                        let escaped = e.replace('\\', "\\\\").replace('\'', "\\'");
+                        let js = format!(
+                            r#"(function(){{
+                                const el = document.querySelector('input[type=email], input[name=email]');
+                                if (el && !el.value) {{
+                                    el.value = '{}';
+                                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                }}
+                            }})();"#,
+                            escaped
+                        );
+                        let _ = window.eval(&js);
+                    }
+                } else if host == "claude.ai"
+                    && !path.starts_with("/api/")
+                    && !path.starts_with("/oauth")
+                {
+                    log::info!(
+                        "auth: post-login redirect detected on {path}, navigating to /api/organizations"
+                    );
                     let _ = window.eval(
                         "window.location.href = 'https://claude.ai/api/organizations';",
                     );
                 }
             });
         })
-        .build()?;
+        .build()
+        .inspect_err(|e| log::error!("auth: WebviewWindowBuilder::build failed: {e}"))?;
+
+    log::info!("auth: window created");
+    let _ = win.show();
+    let _ = win.set_focus();
+
+    // Belt-and-braces: poll cookies every 2s. If we see a sessionKey for
+    // claude.ai but the window is parked elsewhere, force-navigate.
+    let win_for_poll = win.clone();
+    let captured_for_poll = captured.clone();
+    tauri::async_runtime::spawn(async move {
+        let claude_url: tauri::Url = "https://claude.ai".parse().unwrap();
+        for _ in 0..150 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if *captured_for_poll.lock().unwrap() {
+                return;
+            }
+            if win_for_poll.is_visible().is_err() {
+                return;
+            }
+            let cookies = match win_for_poll.cookies_for_url(claude_url.clone()) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let has_session = cookies.iter().any(|c| c.name() == "sessionKey");
+            if !has_session {
+                continue;
+            }
+            let on_orgs_endpoint = win_for_poll
+                .url()
+                .ok()
+                .map(|u| u.path() == "/api/organizations")
+                .unwrap_or(false);
+            if !on_orgs_endpoint {
+                log::info!("auth: poll sees sessionKey but not on /api/organizations, navigating");
+                let _ = win_for_poll.eval(
+                    "window.location.href = 'https://claude.ai/api/organizations';",
+                );
+            }
+        }
+    });
 
     Ok(())
 }
@@ -68,8 +150,6 @@ async fn read_orgs_and_save(
     app: &AppHandle,
     captured: &Arc<Mutex<bool>>,
 ) -> tauri::Result<()> {
-    // Pull body text. eval_with_callback's callback receives a JSON-encoded string,
-    // i.e. the inner string is wrapped in quotes — so we parse it as a JSON Value first.
     let body = match eval_for_string(window, "document.body.innerText").await {
         Some(s) => s,
         None => {
@@ -81,7 +161,6 @@ async fn read_orgs_and_save(
     let orgs: Vec<Org> = match serde_json::from_str(&body) {
         Ok(o) => o,
         Err(_) => {
-            // Don't echo body content — could contain sensitive material.
             log::warn!("auth: page body was not org JSON");
             return Ok(());
         }
@@ -94,7 +173,6 @@ async fn read_orgs_and_save(
         }
     };
 
-    // Cookies are sync in Tauri 2.
     let claude_url: tauri::Url = "https://claude.ai".parse().unwrap();
     let cookies = window.cookies_for_url(claude_url)?;
     let cookie_str = cookies
@@ -124,8 +202,6 @@ async fn read_orgs_and_save(
     Ok(())
 }
 
-/// Run a JS expression and return its String result, or None on failure.
-/// Tauri 2's eval_with_callback feeds back a JSON-encoded string; we deserialize.
 async fn eval_for_string(window: &WebviewWindow, js: &str) -> Option<String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel::<Option<String>>();
@@ -133,7 +209,6 @@ async fn eval_for_string(window: &WebviewWindow, js: &str) -> Option<String> {
     let tx_clone = tx.clone();
 
     let result = window.eval_with_callback(js, move |raw| {
-        // raw is e.g. `"hello"` (JSON-encoded). Deserialize to String.
         let parsed: Option<String> = serde_json::from_str(&raw).ok();
         if let Some(t) = tx_clone.lock().unwrap().take() {
             let _ = t.send(parsed);
@@ -142,6 +217,24 @@ async fn eval_for_string(window: &WebviewWindow, js: &str) -> Option<String> {
     if result.is_err() {
         return None;
     }
-
     rx.await.ok().flatten()
+}
+
+/// Best-effort: pull the Windows account's UPN/email for prefill.
+/// Returns None on any failure — callers must treat this as a hint, not a guarantee.
+fn windows_account_email() -> Option<String> {
+    use std::process::Command;
+    let out = Command::new("whoami")
+        .arg("/upn")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    if s.contains('@') && s.len() < 128 {
+        Some(s)
+    } else {
+        None
+    }
 }

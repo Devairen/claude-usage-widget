@@ -35,3 +35,7 @@ windows-app/.tauri/
 # Editor scratch
 *.bak
 
+# Mobile icon variants (Tauri icon CLI generates them but we don't ship mobile)
+windows-app/src-tauri/icons/android/
+windows-app/src-tauri/icons/ios/
+

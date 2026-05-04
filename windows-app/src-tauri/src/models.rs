@@ -58,6 +58,11 @@ pub enum WidgetState {
         burn_rate_per_min: Option<f64>,
         minutes_to_limit: Option<f64>,
         will_hit_limit: bool,
+        /// Number of minutes of burn-rate sample data we have. Frontend uses this
+        /// to suppress noisy "limit in X" warnings until we have meaningful history.
+        burn_rate_samples_minutes: f64,
+        /// Last 60 samples of 5h%, oldest first. Used for the inline sparkline.
+        spark: Vec<f64>,
         last_updated: String,
         cookie_age_days: Option<i64>,
     },

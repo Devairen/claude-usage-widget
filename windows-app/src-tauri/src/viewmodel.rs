@@ -72,6 +72,7 @@ impl ViewModel {
         let to_reset = self.minutes_to_reset(data.five_hour.as_ref().and_then(|e| e.resets_at.as_deref()));
         let will_hit = matches!((to_limit, to_reset), (Some(a), Some(b)) if a < b);
 
+        // Show every model the API returns (don't hide 0%, that's useful info).
         let mut models: Vec<ModelUsage> = Vec::new();
         if let Some(u) = data.seven_day_sonnet.as_ref().and_then(|e| e.utilization) {
             models.push(ModelUsage { name: "Sonnet".into(), percentage: u });
@@ -83,6 +84,9 @@ impl ViewModel {
             models.push(ModelUsage { name: "Design".into(), percentage: u });
         }
 
+        let samples_minutes = self.samples_minutes();
+        let spark = self.recent_spark(60);
+
         WidgetState::Loaded {
             five_hour_pct: five_pct,
             seven_day_pct: week_pct,
@@ -93,9 +97,29 @@ impl ViewModel {
             burn_rate_per_min: burn,
             minutes_to_limit: to_limit,
             will_hit_limit: will_hit,
+            burn_rate_samples_minutes: samples_minutes,
+            spark,
             last_updated: Local::now().format("%H:%M:%S").to_string(),
             cookie_age_days: *self.cookie_age_days.lock().unwrap(),
         }
+    }
+
+    fn samples_minutes(&self) -> f64 {
+        let s = self.samples.lock().unwrap();
+        if s.len() < 2 {
+            return 0.0;
+        }
+        let first = s.first().unwrap();
+        let last = s.last().unwrap();
+        (last.0 - first.0).num_seconds() as f64 / 60.0
+    }
+
+    /// Returns the most recent N samples' percentages, oldest first.
+    fn recent_spark(&self, n: usize) -> Vec<f64> {
+        let s = self.samples.lock().unwrap();
+        let len = s.len();
+        let start = len.saturating_sub(n);
+        s[start..].iter().map(|(_, pct)| *pct).collect()
     }
 
     fn add_sample(&self, when: DateTime<Utc>, pct: f64) {

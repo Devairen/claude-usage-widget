@@ -1,11 +1,12 @@
 use crate::theme;
-use std::f32::consts::PI;
 use tauri::image::Image;
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
+/// Render at 32x32 — Windows tray downscales to 16x16. Smaller source
+/// downscales sharper than 64x64 → 16x16.
 const ICON_SIZE: u32 = 32;
-const RADIUS: f32 = 12.0;
-const STROKE: f32 = 3.0;
+const RADIUS: f32 = 13.0;
+const STROKE_W: f32 = 4.0;
 
 pub enum IconKind {
     NeedsConfig,
@@ -15,37 +16,61 @@ pub enum IconKind {
     Pct(f64),
 }
 
+/// Tray icon: fully-opaque ring track + bright filled wedge that grows with %.
+/// Plus a small solid dot at the center so the icon is always visible at 16x16.
 pub fn render(kind: IconKind) -> Image<'static> {
     let mut pixmap = Pixmap::new(ICON_SIZE, ICON_SIZE).expect("pixmap alloc");
     let cx = ICON_SIZE as f32 / 2.0;
     let cy = ICON_SIZE as f32 / 2.0;
 
     let (color, draw_pct) = match kind {
-        IconKind::NeedsConfig => (theme::color_idle(), 0.0),
+        IconKind::NeedsConfig | IconKind::Loading => (theme::color_idle(), 0.0),
         IconKind::AuthFailed => (theme::color_special_orange(), 100.0),
         IconKind::Error => (theme::color_special_red(), 100.0),
-        IconKind::Loading => (theme::color_idle(), 0.0),
-        IconKind::Pct(p) => (theme::color_for(p), p.max(0.0).min(100.0)),
+        IconKind::Pct(p) => (theme::color_for(p), p.clamp(0.0, 100.0)),
     };
 
-    // Background track (full circle, faint)
-    let track_color = Color::from_rgba8(theme::TRACK.0, theme::TRACK.1, theme::TRACK.2, theme::TRACK.3);
-    stroke_arc(&mut pixmap, cx, cy, RADIUS, 0.0, 360.0, STROKE, track_color);
+    // Always-visible track ring (opaque mid-gray) — gives the icon a clear silhouette.
+    let track = Color::from_rgba8(180, 180, 180, 200);
+    stroke_ring(&mut pixmap, cx, cy, RADIUS, STROKE_W, track);
 
-    // Foreground arc (clockwise from top)
+    // Foreground wedge over the track
     if draw_pct > 0.0 {
-        let sweep = (draw_pct as f32 / 100.0) * 360.0;
-        stroke_arc(&mut pixmap, cx, cy, RADIUS, 0.0, sweep, STROKE, color);
+        stroke_wedge(&mut pixmap, cx, cy, RADIUS, STROKE_W, draw_pct as f32, color);
     }
 
-    let rgba = pixmap.take();
-    Image::new_owned(rgba, ICON_SIZE, ICON_SIZE)
+    // Solid orange center dot — visible at 16x16, makes the app distinct.
+    fill_dot(&mut pixmap, cx, cy, 3.0, color);
+
+    Image::new_owned(pixmap.take(), ICON_SIZE, ICON_SIZE)
 }
 
-/// Stroke an arc starting at the top (12 o'clock), sweeping clockwise.
-/// `start_deg` and `sweep_deg` are clockwise from 12 o'clock.
-fn stroke_arc(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32, start_deg: f32, sweep_deg: f32, width: f32, color: Color) {
-    if sweep_deg <= 0.0 {
+fn stroke_ring(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32, width: f32, color: Color) {
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    let mut pb = PathBuilder::new();
+    pb.push_circle(cx, cy, r);
+    if let Some(path) = pb.finish() {
+        let stroke = Stroke {
+            width,
+            ..Default::default()
+        };
+        pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+}
+
+fn stroke_wedge(
+    pixmap: &mut Pixmap,
+    cx: f32,
+    cy: f32,
+    r: f32,
+    width: f32,
+    pct: f32,
+    color: Color,
+) {
+    let sweep = (pct.min(100.0) / 100.0) * 360.0;
+    if sweep <= 0.0 {
         return;
     }
     let mut paint = Paint::default();
@@ -53,20 +78,20 @@ fn stroke_arc(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32, start_deg: f32, swe
     paint.anti_alias = true;
 
     let mut pb = PathBuilder::new();
-    let segments = 64.max((sweep_deg.abs() as i32) / 4);
+    let segments = 64.max((sweep as i32) / 3);
     for i in 0..=segments {
         let t = i as f32 / segments as f32;
-        let deg = start_deg + sweep_deg * t;
-        // Map "clockwise from top" to standard math angle (counterclockwise from +x)
+        let deg = sweep * t; // clockwise from top
         let math = (-deg + 90.0).to_radians();
         let x = cx + r * math.cos();
-        let y = cy - r * math.sin(); // y-down in pixmap, so subtract
+        let y = cy - r * math.sin();
         if i == 0 {
             pb.move_to(x, y);
         } else {
             pb.line_to(x, y);
         }
     }
+
     if let Some(path) = pb.finish() {
         let stroke = Stroke {
             width,
@@ -74,7 +99,16 @@ fn stroke_arc(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32, start_deg: f32, swe
             ..Default::default()
         };
         pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
-        let _ = FillRule::EvenOdd;
-        let _ = PI;
+    }
+}
+
+fn fill_dot(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32, color: Color) {
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    let mut pb = PathBuilder::new();
+    pb.push_circle(cx, cy, r);
+    if let Some(path) = pb.finish() {
+        pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
     }
 }

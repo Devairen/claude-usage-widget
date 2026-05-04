@@ -1,0 +1,26 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="warmArc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"  stop-color="#e89b68"/>
+      <stop offset="50%" stop-color="#e06b3e"/>
+      <stop offset="100%" stop-color="#cc4822"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Ring -->
+  <circle cx="256" cy="256" r="180" fill="none"
+          stroke="url(#warmArc)" stroke-width="62"/>
+
+  <!-- % drawn as vector paths, sized to fit inside the ring.
+       Inner radius of ring = 180 - 62/2 = 149.
+       Stay within ~120 of center on either side. -->
+  <g fill="url(#warmArc)">
+    <!-- diagonal slash, centred, length kept inside the ring -->
+    <rect x="244" y="148" width="24" height="216" rx="12"
+          transform="rotate(45 256 256)"/>
+    <!-- top-left dot -->
+    <circle cx="200" cy="200" r="34"/>
+    <!-- bottom-right dot -->
+    <circle cx="312" cy="312" r="34"/>
+  </g>
+</svg>
