@@ -84,8 +84,12 @@ function sessionChartSvg({ samples, currentPct, resetISO, burnRate, samplesMinut
   const y50 = yFor(50);
 
   // Real samples — anchor "now - N*60s" backwards.
+  // Extend the line and fill from session-start (assume 0% before our buffer
+  // started) and forward to reset (projection or flat-at-cap), so the chart
+  // always spans the full 5h window instead of a floating block in the middle.
   let liveLine = "";
   let liveArea = "";
+  let projLine = "";
   if (samples && samples.length >= 2) {
     const minPerSample = 1;
     const oldestMs = nowMs - (samples.length - 1) * minPerSample * 60 * 1000;
@@ -93,31 +97,65 @@ function sessionChartSvg({ samples, currentPct, resetISO, burnRate, samplesMinut
       const t = oldestMs + i * minPerSample * 60 * 1000;
       return [xFor(t), yFor(v)];
     });
-    liveLine = pts
+
+    // Left extension: from session-start at 0% up to the oldest sample.
+    // Only when the buffer doesn't already reach session-start.
+    const leftPts = [];
+    if (oldestMs > sessionStartMs + 60 * 1000) {
+      leftPts.push([xFor(sessionStartMs), yFor(0)]);
+      leftPts.push([xFor(oldestMs), yFor(0)]);
+    }
+
+    // Right extension: projection from "now" to reset.
+    // - If we have a positive burn rate and headroom, slope up to projected end.
+    // - If we're already at/over the cap, draw a flat line at currentPct to reset.
+    // - Otherwise (no burn rate yet), hold flat at currentPct.
+    const rightPts = [];
+    const minsToReset = (resetMs - nowMs) / 60000;
+    if (minsToReset > 0) {
+      const haveBurn =
+        burnRate != null && burnRate > 0 && (samplesMinutes || 0) >= 10;
+      if (haveBurn && currentPct < 100) {
+        const minsToCap = Math.min(minsToReset, (100 - currentPct) / burnRate);
+        const projEndMs = nowMs + minsToCap * 60 * 1000;
+        const projEndPct = currentPct + burnRate * minsToCap;
+        rightPts.push([xFor(projEndMs), yFor(projEndPct)]);
+        // If we hit the cap before reset, hold flat at 100% the rest of the way.
+        if (minsToCap < minsToReset) {
+          rightPts.push([xFor(resetMs), yFor(100)]);
+        }
+      } else {
+        rightPts.push([xFor(resetMs), yFor(currentPct)]);
+      }
+    }
+
+    const fullPts = [...leftPts, ...pts, ...rightPts];
+    liveLine = fullPts
       .map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`)
       .join(" ");
-    // Only fill the area when samples span at least 30 min of session — below
-    // that, a tiny strip near "now" looks broken. Just show the line.
-    const spanMin = (samples.length - 1) * minPerSample;
-    if (spanMin >= 30) {
-      const bottom = (h - padB).toFixed(1);
-      liveArea =
-        liveLine +
-        ` L${pts[pts.length - 1][0].toFixed(1)},${bottom}` +
-        ` L${pts[0][0].toFixed(1)},${bottom} Z`;
-    }
-  }
 
-  // Projection line — only meaningful with >=10 min of data
-  let projLine = "";
-  if (burnRate != null && burnRate > 0 && (samplesMinutes || 0) >= 10) {
-    // Project from "now" forward at burnRate %/min until either reset or 100%
-    const minsToReset = (resetMs - nowMs) / 60000;
-    const minsToCap = Math.min(minsToReset, (100 - currentPct) / burnRate);
-    if (minsToCap > 0) {
-      const projEndMs = nowMs + minsToCap * 60 * 1000;
-      const projEndPct = currentPct + burnRate * minsToCap;
-      projLine = `M${xNow.toFixed(1)},${yFor(currentPct).toFixed(1)} L${xFor(projEndMs).toFixed(1)},${yFor(projEndPct).toFixed(1)}`;
+    // Fill always spans full chart — no min-span guard needed since we extend
+    // to the edges.
+    const bottom = (h - padB).toFixed(1);
+    liveArea =
+      liveLine +
+      ` L${fullPts[fullPts.length - 1][0].toFixed(1)},${bottom}` +
+      ` L${fullPts[0][0].toFixed(1)},${bottom} Z`;
+
+    // Dashed projection overlay — only when we have a real burn rate AND
+    // headroom. Stays as the slanted dashed line for visual emphasis.
+    if (
+      burnRate != null &&
+      burnRate > 0 &&
+      (samplesMinutes || 0) >= 10 &&
+      currentPct < 100
+    ) {
+      const minsToCap = Math.min(minsToReset, (100 - currentPct) / burnRate);
+      if (minsToCap > 0) {
+        const projEndMs = nowMs + minsToCap * 60 * 1000;
+        const projEndPct = currentPct + burnRate * minsToCap;
+        projLine = `M${xNow.toFixed(1)},${yFor(currentPct).toFixed(1)} L${xFor(projEndMs).toFixed(1)},${yFor(projEndPct).toFixed(1)}`;
+      }
     }
   }
 
