@@ -26,9 +26,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 CSV_PATH = SCRIPT_DIR / "usage-log.csv"
 OUT_PATH = SCRIPT_DIR / "usage-graph.png"
 
-BMW_LIGHT_BLUE = "#1C69D4"
-BMW_DARK_BLUE = "#0653B6"
-BMW_RED = "#E22718"
+ACCENT_BLUE = "#1C69D4"
+ACCENT_DARK = "#0653B6"
+ACCENT_RED = "#E22718"
 
 
 def load_rows(since: datetime | None) -> list[tuple[datetime, float, float]]:
@@ -86,16 +86,16 @@ def main():
         ax.spines["bottom"].set_color("#444")
         ax.tick_params(colors="#aaa")
         ax.set_ylim(0, 100)
-        ax.axhline(80, color=BMW_DARK_BLUE, alpha=0.3, linestyle=":", linewidth=0.8)
-        ax.axhline(95, color=BMW_RED, alpha=0.3, linestyle=":", linewidth=0.8)
+        ax.axhline(80, color=ACCENT_DARK, alpha=0.3, linestyle=":", linewidth=0.8)
+        ax.axhline(95, color=ACCENT_RED, alpha=0.3, linestyle=":", linewidth=0.8)
 
-    ax1.plot(times, five, color=BMW_LIGHT_BLUE, linewidth=1.5)
-    ax1.fill_between(times, 0, five, color=BMW_LIGHT_BLUE, alpha=0.2)
+    ax1.plot(times, five, color=ACCENT_BLUE, linewidth=1.5)
+    ax1.fill_between(times, 0, five, color=ACCENT_BLUE, alpha=0.2)
     ax1.set_ylabel("5h session %", color="#ddd", fontsize=11)
-    ax1.set_title("CLAUDE USAGE", color=BMW_RED, fontsize=14, fontweight="bold", pad=12)
+    ax1.set_title("CLAUDE USAGE", color=ACCENT_RED, fontsize=14, fontweight="bold", pad=12)
 
-    ax2.plot(times, week, color=BMW_DARK_BLUE, linewidth=1.5)
-    ax2.fill_between(times, 0, week, color=BMW_DARK_BLUE, alpha=0.2)
+    ax2.plot(times, week, color=ACCENT_DARK, linewidth=1.5)
+    ax2.fill_between(times, 0, week, color=ACCENT_DARK, alpha=0.2)
     ax2.set_ylabel("weekly %", color="#ddd", fontsize=11)
 
     span = times[-1] - times[0]

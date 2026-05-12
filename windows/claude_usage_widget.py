@@ -32,10 +32,9 @@ SPARK_WIDTH = 30
 NOTIFY_THRESHOLDS = (80.0, 95.0)
 COOKIE_WARN_DAYS = 25
 
-# BMW M tricolor
-BMW_LIGHT_BLUE = "#1C69D4"
-BMW_DARK_BLUE = "#0653B6"
-BMW_RED = "#E22718"
+ACCENT_BLUE = "#1C69D4"
+ACCENT_DARK = "#0653B6"
+ACCENT_RED = "#E22718"
 
 
 def load_config() -> dict:
@@ -96,10 +95,10 @@ def fmt_reset(iso_str: str | None) -> tuple[str, str]:
 
 def color_for(pct: float) -> str:
     if pct >= 66:
-        return f"bold {BMW_RED}"
+        return f"bold {ACCENT_RED}"
     if pct >= 33:
-        return f"bold {BMW_DARK_BLUE}"
-    return f"bold {BMW_LIGHT_BLUE}"
+        return f"bold {ACCENT_DARK}"
+    return f"bold {ACCENT_BLUE}"
 
 
 def save_history(history: deque) -> None:
@@ -234,17 +233,17 @@ def code_burn_rate(window_minutes: int = 10) -> tuple[int, int] | None:
 
 
 def render(data: dict | None, err: str | None, history: deque, last_ok: str | None) -> Panel:
-    title = Text(" CLAUDE USAGE ", style=f"bold {BMW_RED} on black")
+    title = Text(" CLAUDE USAGE ", style=f"bold {ACCENT_RED} on black")
 
     if err and not data:
         body = Table.grid(expand=True)
         body.add_column()
-        body.add_row(Text(f"\n  !  {err}\n", style=f"bold {BMW_RED}"))
+        body.add_row(Text(f"\n  !  {err}\n", style=f"bold {ACCENT_RED}"))
         if last_ok:
             body.add_row(Text(f"  Last good fetch: {last_ok}", style="dim"))
         body.add_row(Text(f"\n  Edit cookie at: {CONFIG_PATH.name}", style="dim"))
         body.add_row(Text(f"  Retrying every {POLL_SECONDS}s...\n", style="dim"))
-        return Panel(body, title=title, border_style=BMW_RED, padding=(1, 2))
+        return Panel(body, title=title, border_style=ACCENT_RED, padding=(1, 2))
 
     five = data["five_hour"]
     week = data["seven_day"]
@@ -290,7 +289,7 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
         return g
 
     def header(text: str) -> Text:
-        return Text(text, style=f"bold {BMW_LIGHT_BLUE}")
+        return Text(text, style=f"bold {ACCENT_BLUE}")
 
     def bar_row(g: Table, label: str, pct: float, suffix: str):
         bar = ProgressBar(
@@ -298,7 +297,7 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
             completed=pct,
             width=None,
             complete_style=color_for(pct),
-            finished_style=f"bold {BMW_RED}",
+            finished_style=f"bold {ACCENT_RED}",
             style="grey23",
         )
         g.add_row(Text(label, style="bold"), bar, Text(suffix, style=color_for(pct)))
@@ -310,7 +309,7 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
     if spark:
         g1.add_row(
             Text("Trend", style="dim"),
-            Text(spark, style=BMW_DARK_BLUE),
+            Text(spark, style=ACCENT_DARK),
             Text(f"{len(spark_values)*POLL_SECONDS//60}m", style="dim"),
         )
     sections.append((header("CURRENT 5H SESSION"), g1))
@@ -355,7 +354,7 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
     if err:
         foot += f"  ·  ! {err}"
     foot += cookie_warn
-    foot_style = BMW_RED if cookie_warn else "dim"
+    foot_style = ACCENT_RED if cookie_warn else "dim"
 
     pieces: list = []
     for i, (h, g) in enumerate(sections):
@@ -366,7 +365,7 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
     pieces.append(Text(""))
     pieces.append(Text(foot, style=foot_style))
 
-    return Panel(Group(*pieces), title=title, border_style=BMW_RED, padding=(1, 2))
+    return Panel(Group(*pieces), title=title, border_style=ACCENT_RED, padding=(1, 2))
 
 
 def poll_and_record(history: deque) -> tuple[dict | None, str | None]:
