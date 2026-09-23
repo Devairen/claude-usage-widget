@@ -30,7 +30,6 @@ POLL_SECONDS = 60
 HISTORY_LEN = 60
 SPARK_WIDTH = 30
 NOTIFY_THRESHOLDS = (80.0, 95.0)
-COOKIE_WARN_DAYS = 25
 
 ACCENT_BLUE = "#1C69D4"
 ACCENT_DARK = "#0653B6"
@@ -129,13 +128,6 @@ def sparkline(values: list[float], width: int) -> str:
     lo, hi = min(values), max(values)
     span = hi - lo if hi > lo else 1.0
     return "".join(SPARK_CHARS[int(((v - lo) / span) * (len(SPARK_CHARS) - 1))] for v in values)
-
-
-def cookie_age_days() -> int | None:
-    try:
-        return int((time.time() - CONFIG_PATH.stat().st_mtime) / 86400)
-    except Exception:
-        return None
 
 
 _notified: set[float] = set()
@@ -347,14 +339,10 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
             g4.add_row(Text("Sessions", style="dim"), Text(str(sessions), style="white"), Text(""))
         sections.append((header("CODE BURN RATE (10m)"), g4))
 
-    age = cookie_age_days()
-    cookie_warn = f"  ·  cookie {age}d old" if (age is not None and age >= COOKIE_WARN_DAYS) else ""
-
     foot = f"updated {datetime.now().strftime('%H:%M:%S')}"
     if err:
         foot += f"  ·  ! {err}"
-    foot += cookie_warn
-    foot_style = ACCENT_RED if cookie_warn else "dim"
+    foot_style = "dim"
 
     pieces: list = []
     for i, (h, g) in enumerate(sections):
