@@ -220,11 +220,6 @@ struct PopoverView: View {
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
-                if let age = configManager.configAgeDays, age >= 25 {
-                    Label("Cookie \(age)d old", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.orange)
-                }
             }
 
             HStack {

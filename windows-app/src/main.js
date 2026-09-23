@@ -383,13 +383,7 @@ function compactDblClickHandler(e) {
 }
 
 function renderLoaded(s) {
-  const cookieWarn =
-    s.cookie_age_days != null && s.cookie_age_days >= 25
-      ? `<div class="warning-banner">Cookie ${s.cookie_age_days} days old — sign in again soon</div>`
-      : "";
-
   return (
-    cookieWarn +
     renderUsageSection({
       title: "5h session",
       icon: "◔",
