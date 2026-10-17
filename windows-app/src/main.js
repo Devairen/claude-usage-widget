@@ -296,8 +296,10 @@ function renderModels(models) {
 
 function renderExtra(extra) {
   if (!extra || !extra.is_enabled) return "";
-  const used = extra.used_credits || 0;
-  const limit = extra.monthly_limit || 0;
+  // Amounts come in minor units (cents); decimal_places says how many.
+  const divisor = Math.pow(10, extra.decimal_places ?? 2);
+  const used = (extra.used_credits || 0) / divisor;
+  const limit = (extra.monthly_limit || 0) / divisor;
   const cur = extra.currency || "USD";
   const text = limit > 0
     ? `${used.toFixed(2)} / ${limit.toFixed(2)} ${cur}`

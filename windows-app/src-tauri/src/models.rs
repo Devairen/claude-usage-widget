@@ -22,6 +22,8 @@ pub struct ExtraUsage {
     pub used_credits: Option<f64>,
     pub monthly_limit: Option<f64>,
     pub currency: Option<String>,
+    /// Amounts are in minor units (cents); 2 means divide by 100.
+    pub decimal_places: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

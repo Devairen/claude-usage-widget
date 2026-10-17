@@ -191,8 +191,8 @@ struct PopoverView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     let currency = extra.currency ?? "USD"
-                    let used = extra.usedCredits ?? 0
-                    let limit = extra.monthlyLimit ?? 0
+                    let used = extra.usedAmount
+                    let limit = extra.limitAmount
                     if limit > 0 {
                         Text(String(format: "%.2f / %.2f %@", used, limit, currency))
                             .font(.system(size: 12, weight: .medium, design: .rounded))

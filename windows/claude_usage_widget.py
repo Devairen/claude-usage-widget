@@ -319,8 +319,11 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
 
     if extra.get("is_enabled"):
         g3 = make_grid()
-        used = extra.get("used_credits") or 0
-        limit = extra.get("monthly_limit") or 0
+        # Amounts come in minor units (cents); decimal_places says how many.
+        dp = extra.get("decimal_places")
+        divisor = 10 ** (2 if dp is None else dp)
+        used = (extra.get("used_credits") or 0) / divisor
+        limit = (extra.get("monthly_limit") or 0) / divisor
         cur = extra.get("currency") or ""
         if limit:
             bar_row(g3, "Spend", (used / limit) * 100, f"{used:.2f}/{limit:.0f} {cur}")

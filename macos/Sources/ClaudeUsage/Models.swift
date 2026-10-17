@@ -35,13 +35,19 @@ struct ExtraUsage: Codable {
     let usedCredits: Double?
     let monthlyLimit: Double?
     let currency: String?
+    let decimalPlaces: Int?  // amounts are in minor units (cents); 2 → divide by 100
 
     enum CodingKeys: String, CodingKey {
         case isEnabled = "is_enabled"
         case usedCredits = "used_credits"
         case monthlyLimit = "monthly_limit"
         case currency
+        case decimalPlaces = "decimal_places"
     }
+
+    private var divisor: Double { pow(10, Double(decimalPlaces ?? 2)) }
+    var usedAmount: Double { (usedCredits ?? 0) / divisor }
+    var limitAmount: Double { (monthlyLimit ?? 0) / divisor }
 }
 
 // MARK: - Config
