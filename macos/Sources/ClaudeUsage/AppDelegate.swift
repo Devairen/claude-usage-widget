@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = renderArcIcon(percentage: 0, color: .tertiaryLabelColor, settings: configManager.loadSettings())
+            button.image = renderBarIcon(percentage: 0, color: .tertiaryLabelColor)
             button.action = #selector(togglePopover)
             button.target = self
         }
@@ -186,9 +186,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .authFailed:    color = .systemOrange
         case .error:         color = .systemRed
         case .needsConfig:   color = .tertiaryLabelColor
-        default:             color = Theme.color(for: viewModel.fiveHourPct, settings: settings)
+        default:             color = Theme.color(for: viewModel.sevenDayPct, settings: settings)
         }
-        button.image = renderArcIcon(percentage: viewModel.fiveHourPct, color: color, settings: settings)
+        button.image = renderBarIcon(percentage: viewModel.sevenDayPct, color: color)
     }
 
     // The actual Claude AI logo path (from official SVG, viewBox 0 0 100 100)
@@ -211,78 +211,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bezier.fill()
     }
 
-    private func renderArcIcon(percentage: Double, color: NSColor, settings: AppSettings) -> NSImage {
-        let showPct = settings.showPercentageInBar
-        let showIcon = settings.showClaudeIcon
-
-        let iconSize: CGFloat = 18
+    /// Menu-bar image: the Claude logo followed by the weekly (7-day) percentage.
+    /// The 5-hour session ring was dropped 16/11/2026: claude.ai no longer has 5-hour windows.
+    private func renderBarIcon(percentage: Double, color: NSColor) -> NSImage {
+        let height: CGFloat = 18
         let logoSize: CGFloat = 14
-        let gap: CGFloat = 3
-        var totalWidth: CGFloat = iconSize
-        if showIcon { totalWidth += logoSize + gap }
-        if showPct { totalWidth += 32 + gap }
+        let gap: CGFloat = 4
 
-        let image = NSImage(size: NSSize(width: totalWidth, height: iconSize), flipped: false) { rect in
-            var xOffset: CGFloat = 0
+        let pctStr = "\(Int(max(percentage, 0).rounded()))%"
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        let str = NSAttributedString(string: pctStr, attributes: [
+            .font: font,
+            .foregroundColor: color
+        ])
+        let textSize = str.size()
+        let totalWidth = ceil(logoSize + gap + textSize.width)
 
-            // Optional Claude logo
-            if showIcon {
-                let yPos = (rect.height - logoSize) / 2
-                self.drawClaudeLogo(in: NSRect(x: xOffset, y: yPos, width: logoSize, height: logoSize), color: color)
-                xOffset += logoSize + gap
-            }
-
-            // Circular arc
-            let center = CGPoint(x: xOffset + iconSize / 2, y: rect.midY)
-            let radius: CGFloat = 7
-            let lineWidth: CGFloat = 2.5
-
-            // Background track
-            let track = NSBezierPath()
-            track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-            NSColor.tertiaryLabelColor.setStroke()
-            track.lineWidth = lineWidth
-            track.stroke()
-
-            // Progress arc (starts at top, sweeps visually clockwise)
-            let drawPct = max(percentage, 0)
-            if drawPct >= 100 {
-                let arc = NSBezierPath()
-                arc.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-                color.setStroke()
-                arc.lineWidth = lineWidth
-                arc.lineCapStyle = .round
-                arc.stroke()
-            } else if drawPct > 0 {
-                let startAngle: CGFloat = 90
-                let endAngle: CGFloat = 90 - (drawPct / 100 * 360)
-                let arc = NSBezierPath()
-                arc.appendArc(
-                    withCenter: center, radius: radius,
-                    startAngle: startAngle, endAngle: endAngle,
-                    clockwise: true
-                )
-                color.setStroke()
-                arc.lineWidth = lineWidth
-                arc.lineCapStyle = .round
-                arc.stroke()
-            }
-            xOffset += iconSize + gap
-
-            // Optional percentage text — vertically centered
-            if showPct {
-                let pctStr = "\(Int(percentage))%"
-                let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .semibold)
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: color
-                ]
-                let str = NSAttributedString(string: pctStr, attributes: attrs)
-                let textSize = str.size()
-                let yPos = (rect.height - textSize.height) / 2
-                str.draw(at: NSPoint(x: xOffset, y: yPos))
-            }
-
+        let image = NSImage(size: NSSize(width: totalWidth, height: height), flipped: false) { rect in
+            let logoY = (rect.height - logoSize) / 2
+            self.drawClaudeLogo(in: NSRect(x: 0, y: logoY, width: logoSize, height: logoSize), color: color)
+            let textY = (rect.height - textSize.height) / 2
+            str.draw(at: NSPoint(x: logoSize + gap, y: textY))
             return true
         }
         image.isTemplate = false

@@ -74,12 +74,6 @@ struct SettingsView: View {
 
             // MARK: - Display
             Section {
-                Toggle("Show percentage in menu bar", isOn: $showPercentageInBar)
-                    .onChange(of: showPercentageInBar) { saveDisplaySettings() }
-
-                Toggle("Show Claude icon in menu bar", isOn: $showClaudeIcon)
-                    .onChange(of: showClaudeIcon) { saveDisplaySettings() }
-
                 Toggle("Keep accent color at high usage", isOn: $alwaysUseAccentColor)
                     .onChange(of: alwaysUseAccentColor) { saveDisplaySettings() }
 
