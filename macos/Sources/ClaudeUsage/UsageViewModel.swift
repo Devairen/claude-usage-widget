@@ -29,6 +29,18 @@ final class UsageViewModel {
         sevenDay?.utilization ?? 0
     }
 
+    /// True when this account still has a 5-hour session window. Pro and Max keep one;
+    /// Ultra (the old Max 20x) dropped it in late October 2026, so claude.ai sends it as null.
+    var hasFiveHourWindow: Bool {
+        fiveHour?.utilization != nil
+    }
+
+    /// The number shown in the menu bar: the 5-hour session if the account has one,
+    /// otherwise the weekly (7-day) usage.
+    var menuBarPct: Double {
+        hasFiveHourWindow ? fiveHourPct : sevenDayPct
+    }
+
     func update(with data: UsageData) {
         fiveHour = data.fiveHour
         sevenDay = data.sevenDay

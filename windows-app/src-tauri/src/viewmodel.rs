@@ -46,16 +46,23 @@ impl ViewModel {
         self.last_state.lock().unwrap().clone()
     }
 
-    pub fn five_hour_pct(&self) -> f64 {
+    /// The tray number: the 5-hour session when the account has one, otherwise weekly.
+    /// Pro and Max keep a 5h window; Ultra (old Max 20x) has only the weekly limit.
+    pub fn tray_pct(&self) -> f64 {
         match &*self.last_state.lock().unwrap() {
-            WidgetState::Loaded { five_hour_pct, .. } => *five_hour_pct,
+            WidgetState::Loaded { tray_pct, .. } => *tray_pct,
             _ => 0.0,
         }
+    }
+
+    pub fn has_five_hour(&self) -> bool {
+        matches!(&*self.last_state.lock().unwrap(), WidgetState::Loaded { has_five_hour: true, .. })
     }
 
     /// Convert a fetched UsageData into a Loaded state, also updating the
     /// burn-rate buffer.
     pub fn build_loaded_state(&self, data: &UsageData) -> WidgetState {
+        let has_five = data.five_hour.as_ref().and_then(|e| e.utilization).is_some();
         let five_pct = data
             .five_hour
             .as_ref()
@@ -89,6 +96,8 @@ impl ViewModel {
         let spark = self.recent_spark(60);
 
         WidgetState::Loaded {
+            has_five_hour: has_five,
+            tray_pct: if has_five { five_pct } else { week_pct },
             five_hour_pct: five_pct,
             seven_day_pct: week_pct,
             five_hour_resets_at: data.five_hour.as_ref().and_then(|e| e.resets_at.clone()),

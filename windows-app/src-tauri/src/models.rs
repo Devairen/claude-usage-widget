@@ -51,6 +51,10 @@ pub enum WidgetState {
     NeedsConfig,
     AuthFailed,
     Loaded {
+        /// False when claude.ai sends no 5-hour window (Ultra plan since late Oct 2026).
+        has_five_hour: bool,
+        /// The number the tray icon shows: 5h session if present, else weekly.
+        tray_pct: f64,
         five_hour_pct: f64,
         seven_day_pct: f64,
         five_hour_resets_at: Option<String>,

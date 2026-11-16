@@ -186,9 +186,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .authFailed:    color = .systemOrange
         case .error:         color = .systemRed
         case .needsConfig:   color = .tertiaryLabelColor
-        default:             color = Theme.color(for: viewModel.sevenDayPct, settings: settings)
+        default:             color = Theme.color(for: viewModel.menuBarPct, settings: settings)
         }
-        button.image = renderBarIcon(percentage: viewModel.sevenDayPct, color: color)
+        button.image = renderBarIcon(percentage: viewModel.menuBarPct, color: color)
     }
 
     // The actual Claude AI logo path (from official SVG, viewBox 0 0 100 100)
@@ -211,8 +211,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bezier.fill()
     }
 
-    /// Menu-bar image: the Claude logo followed by the weekly (7-day) percentage.
-    /// The 5-hour session ring was dropped 16/11/2026: claude.ai no longer has 5-hour windows.
+    /// Menu-bar image: the Claude logo followed by a percentage (see UsageViewModel.menuBarPct:
+    /// the 5-hour session when the account has one, otherwise weekly). The ring was dropped 16/11/2026.
     private func renderBarIcon(percentage: Double, color: NSColor) -> NSImage {
         let height: CGFloat = 18
         let logoSize: CGFloat = 14

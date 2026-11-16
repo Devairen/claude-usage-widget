@@ -496,15 +496,19 @@ async fn poll_once(app: &AppHandle) {
             let new_state = state.view_model.build_loaded_state(&data);
             push_state(app, new_state.clone());
 
-            let pct = state.view_model.five_hour_pct();
+            let pct = state.view_model.tray_pct();
+            let label = if state.view_model.has_five_hour() { "5h session" } else { "Weekly usage" };
             update_tray_icon(app, IconKind::Pct(pct));
+            if let Some(tray) = app.tray_by_id("main") {
+                let _ = tray.set_tooltip(Some(format!("Claude Usage: {label} {pct:.0}%")));
+            }
 
             // Persist to disk
             let logger = LoggingService::new(app);
             logger.log(&data);
 
             // Notifications at 80% / 95% — TODO: dedupe per session in v0.2
-            maybe_notify(app, pct);
+            maybe_notify(app, pct, label);
         }
         Err(UsageError::AuthFailed) => {
             push_state(app, WidgetState::AuthFailed);
@@ -535,7 +539,7 @@ fn update_tray_icon(app: &AppHandle, kind: IconKind) {
     }
 }
 
-fn maybe_notify(app: &AppHandle, pct: f64) {
+fn maybe_notify(app: &AppHandle, pct: f64, label: &str) {
     use tauri_plugin_notification::NotificationExt;
     static LAST: once_cell::sync::Lazy<std::sync::Mutex<f64>> =
         once_cell::sync::Lazy::new(|| std::sync::Mutex::new(0.0));
@@ -562,7 +566,7 @@ fn maybe_notify(app: &AppHandle, pct: f64) {
                     .notification()
                     .builder()
                     .title("Claude Usage")
-                    .body(format!("5h session at {:.0}% (crossed {:.0}%)", pct, t))
+                    .body(format!("{label} at {:.0}% (crossed {:.0}%)", pct, t))
                     .show()
                 {
                     Ok(_) => log::info!("notify shown ok"),

@@ -385,8 +385,10 @@ function compactDblClickHandler(e) {
 }
 
 function renderLoaded(s) {
+  // Accounts without a 5-hour window (Ultra) only get the weekly section.
+  const hasFive = s.has_five_hour !== false;
   return (
-    renderUsageSection({
+    (hasFive ? renderUsageSection({
       title: "5h session",
       icon: "◔",
       percentage: s.five_hour_pct,
@@ -396,7 +398,7 @@ function renderLoaded(s) {
       minutesToLimit: s.minutes_to_limit,
       spark: s.spark,
       showChart: cachedSettings.show_sparkline,
-    }) +
+    }) : "") +
     renderUsageSection({
       title: "Weekly",
       icon: "▦",
@@ -653,7 +655,7 @@ function settingsBody(s) {
     <div class="settings-row settings-thresholds">
       <div style="flex:1; min-width:0">
         <div class="settings-label">Notification thresholds</div>
-        <div class="settings-sub">Fire when 5h session crosses each level.</div>
+        <div class="settings-sub">Fire when the tray number crosses each level (5h session, or weekly on plans without a 5h window).</div>
         <div class="threshold-tags">
           ${tags || `<span class="settings-sub">none</span>`}
           <button class="threshold-add" id="threshold-add-btn">+ add</button>

@@ -138,8 +138,26 @@ struct PopoverView: View {
     private var usageContent: some View {
         let s = settings
         return VStack(alignment: .leading, spacing: 0) {
+            // 5h session (with pace estimate)
+            if let fiveHour = viewModel.fiveHour, fiveHour.utilization != nil {
+                UsageSectionView(
+                    title: "5h Session",
+                    icon: "timer",
+                    percentage: fiveHour.utilization ?? 0,
+                    resetISO: fiveHour.resetsAt,
+                    settings: s,
+                    burnRate: viewModel.burnRatePerMinute,
+                    minutesToLimit: viewModel.minutesToLimit,
+                    willHitLimit: viewModel.willHitLimitBeforeReset
+                )
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+
             // Weekly (7d)
             if let sevenDay = viewModel.sevenDay, sevenDay.utilization != nil {
+                Divider().padding(.horizontal, 12)
+
                 UsageSectionView(
                     title: "Weekly (7d)",
                     icon: "calendar",

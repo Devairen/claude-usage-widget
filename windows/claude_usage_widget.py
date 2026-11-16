@@ -133,7 +133,7 @@ def sparkline(values: list[float], width: int) -> str:
 _notified: set[float] = set()
 
 
-def maybe_notify(pct: float) -> None:
+def maybe_notify(pct: float, label: str = "5h session") -> None:
     for threshold in NOTIFY_THRESHOLDS:
         if pct >= threshold and threshold not in _notified:
             _notified.add(threshold)
@@ -143,7 +143,7 @@ def maybe_notify(pct: float) -> None:
                 toaster = WindowsToaster("Claude Usage")
                 toast = Toast()
                 toast.text_fields = [
-                    f"5h session at {pct:.0f}%",
+                    f"{label} at {pct:.0f}%",
                     f"You crossed the {threshold:.0f}% threshold.",
                 ]
                 toaster.show_toast(toast)
@@ -237,7 +237,9 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
         body.add_row(Text(f"  Retrying every {POLL_SECONDS}s...\n", style="dim"))
         return Panel(body, title=title, border_style=ACCENT_RED, padding=(1, 2))
 
-    five = data["five_hour"]
+    # Ultra plans (old Max 20x) have no 5-hour window since late Oct 2026: five_hour comes back null.
+    five = data.get("five_hour") or {}
+    has_five = five.get("utilization") is not None
     week = data["seven_day"]
     sonnet = data.get("seven_day_sonnet")
     opus = data.get("seven_day_opus")
@@ -304,7 +306,8 @@ def render(data: dict | None, err: str | None, history: deque, last_ok: str | No
             Text(spark, style=ACCENT_DARK),
             Text(f"{len(spark_values)*POLL_SECONDS//60}m", style="dim"),
         )
-    sections.append((header("CURRENT 5H SESSION"), g1))
+    if has_five:
+        sections.append((header("CURRENT 5H SESSION"), g1))
 
     g2 = make_grid()
     bar_row(g2, "All models", week_pct, f"{week_pct:.1f}%")
@@ -363,15 +366,19 @@ def poll_and_record(history: deque) -> tuple[dict | None, str | None]:
     config = load_config()
     data, err = fetch_usage(config)
     if data:
-        five_pct = float(data["five_hour"].get("utilization") or 0)
+        five = data.get("five_hour") or {}
+        has_five = five.get("utilization") is not None
+        five_pct = float(five.get("utilization") or 0)
         week_pct = float(data["seven_day"].get("utilization") or 0)
+        # Track the 5h session when the plan has one, otherwise the weekly usage.
+        tracked = five_pct if has_five else week_pct
         bucket = int(time.time()) // POLL_SECONDS
         if not history or history[-1][0] != bucket:
-            history.append((bucket, five_pct))
+            history.append((bucket, tracked))
             save_history(history)
         append_csv(five_pct, week_pct)
         reset_notifications_if_session_reset(history)
-        maybe_notify(five_pct)
+        maybe_notify(tracked, "5h session" if has_five else "Weekly usage")
     return data, err
 
 
