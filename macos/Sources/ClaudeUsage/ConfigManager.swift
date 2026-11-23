@@ -9,8 +9,19 @@ final class ConfigManager {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         appDirectory = appSupport.appendingPathComponent("ClaudeUsage")
         try? FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
-        // Restrict directory to owner-only (rwx------)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: appDirectory.path)
+        // Restrict directory to owner-only (rwx------). It holds the Claude
+        // session cookie, so a failure is logged instead of swallowed, and the
+        // result is read back: setAttributes can succeed on a filesystem that
+        // ignores POSIX modes.
+        do {
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: appDirectory.path)
+        } catch {
+            NSLog("ClaudeUsage: could not lock %@ to owner-only: %@", appDirectory.path, error.localizedDescription)
+        }
+        if let mode = (try? FileManager.default.attributesOfItem(atPath: appDirectory.path))?[.posixPermissions] as? NSNumber,
+           mode.intValue & 0o077 != 0 {
+            NSLog("ClaudeUsage: %@ is readable by others (mode %o); cookie folder is not locked", appDirectory.path, mode.intValue)
+        }
         configURL = appDirectory.appendingPathComponent("config.json")
         settingsURL = appDirectory.appendingPathComponent("settings.json")
     }
